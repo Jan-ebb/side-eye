@@ -53,7 +53,7 @@ enum OverlayMetrics {
     }
 
     private static func briefingRowHeight(for session: Session, tailWidth: CGFloat) -> CGFloat {
-        let textWidth = width - 2 * (sidebarInset + listInset + rowInset + rowSpacing) - iconWidth - tailWidth
+        let textWidth = width - 2 * (sidebarInset + listInset + rowInset) - rowSpacing - tailWidth
         let summary = summaryHeight(session.stateSummary, width: textWidth - 2, limit: 2)
         let chrome = briefingTitleHeight + rowMetadataHeight + briefingLineGap + 2 * briefingRowPadding
         return summary == 0 ? chrome : chrome + briefingLineGap + summary
@@ -85,7 +85,7 @@ enum OverlayMetrics {
     }
 
     static func compactSummaryInset(numberWidth: CGFloat) -> CGFloat {
-        numberWidth + iconWidth + 2 * rowSpacing + sourceIconSize + sourceIconSpacing
+        numberWidth + rowSpacing + sourceIconSize + sourceIconSpacing
     }
 
     private static func compactListHeight(for count: Int) -> CGFloat {
@@ -831,7 +831,6 @@ private struct SidebarRow: View {
 
     private var briefingContent: some View {
         HStack(alignment: .top, spacing: OverlayMetrics.rowSpacing) {
-            SessionStateIcon(state: row.visualState, colors: colors)
             VStack(alignment: .leading, spacing: OverlayMetrics.briefingLineGap) {
                 title(compact: false)
                     .frame(height: OverlayMetrics.briefingTitleHeight)
@@ -857,7 +856,6 @@ private struct SidebarRow: View {
             HStack(spacing: OverlayMetrics.rowSpacing) {
                 number
                     .frame(width: numberWidth)
-                SessionStateIcon(state: row.visualState, colors: colors)
                 title(compact: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if row.showsUnreadDot {
