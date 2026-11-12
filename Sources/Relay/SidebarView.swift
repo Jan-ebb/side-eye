@@ -26,12 +26,15 @@ enum OverlayMetrics {
     static let briefingLineGap: CGFloat = 2
     static let briefingViewportRows = 6
     static let compactRowHeight: CGFloat = 27
+    static let compactViewportRows = 8
+    static let compactSummaryBottomPadding: CGFloat = 6
+    static let upNextLabel = "Up next"
     static let compactToolbarHeight: CGFloat = 38
-    static let compactDetailHeight: CGFloat = 72
     static let headerHeight: CGFloat = 43
     static let filterHeight: CGFloat = 31
     static let jumpBarHeight: CGFloat = 35
-    static let footerHeight: CGFloat = 32
+    static let footerHeight: CGFloat = 28
+    static let jumpFooterHeight: CGFloat = 32
     static let frameChrome = headerHeight + filterHeight + footerHeight + 2
     static let emptyHeight: CGFloat = 88
 
@@ -79,8 +82,19 @@ enum OverlayMetrics {
         max(shortcutWidth, 8 + 7 * CGFloat(String(rowCount).count))
     }
 
+    static func compactSummaryInset(numberWidth: CGFloat) -> CGFloat {
+        numberWidth + iconWidth + 2 * rowSpacing
+    }
+
     private static func compactListHeight(for count: Int) -> CGFloat {
         count == 0 ? emptyHeight : 10 + CGFloat(count) * compactRowHeight + CGFloat(count - 1)
+    }
+
+    private static func compactSummaryHeight(for summary: String?, rowCount: Int) -> CGFloat {
+        let inset = compactSummaryInset(numberWidth: numberWidth(for: rowCount))
+        let textWidth = width - 2 * (sidebarInset + listInset + rowInset) - inset
+        let text = summary.flatMap { $0.isEmpty ? nil : "\(upNextLabel) · \($0)" } ?? upNextLabel
+        return summaryHeight(text, width: textWidth - 2, limit: 2) + compactSummaryBottomPadding
     }
 
     @MainActor
@@ -89,11 +103,13 @@ enum OverlayMetrics {
         if store.numberEntry != nil {
             let detailHeight = store.enteredSession.map(jumpDetailHeight(for:)) ?? 0
             return headerHeight + jumpBarHeight + compactListHeight(for: min(rows.count, 18))
-                + detailHeight + footerHeight + 2
+                + detailHeight + jumpFooterHeight + 2
         }
         if store.showsAllSummaries { return frameChrome + briefingListHeight(for: rows) }
         let chrome = store.query.isEmpty ? compactToolbarHeight + footerHeight + 2 : frameChrome
-        return chrome + compactListHeight(for: min(rows.count, 12)) + (rows.isEmpty ? 0 : compactDetailHeight)
+        let listHeight = compactListHeight(for: min(rows.count, compactViewportRows))
+        guard store.nextActionID != nil else { return chrome + listHeight }
+        return chrome + listHeight + compactSummaryHeight(for: rows.first?.session.stateSummary, rowCount: rows.count)
     }
 }
 
@@ -247,6 +263,7 @@ private struct RowNumber: View {
     let highlighted: Bool
     let colors: OverlayColors
     var outlined = false
+    var boxed = true
 
     var body: some View {
         Text(label)
@@ -255,9 +272,9 @@ private struct RowNumber: View {
             .lineLimit(1)
             .padding(.horizontal, 4)
             .frame(minWidth: OverlayMetrics.shortcutWidth, minHeight: 19)
-            .background(highlighted ? colors.inset : .clear, in: RoundedRectangle(cornerRadius: 4))
+            .background(boxed && highlighted ? colors.inset : .clear, in: RoundedRectangle(cornerRadius: 4))
             .overlay {
-                if highlighted || outlined {
+                if boxed && (highlighted || outlined) {
                     RoundedRectangle(cornerRadius: 4).strokeBorder(colors.divider)
                 }
             }
@@ -305,9 +322,15 @@ private struct StateSummary: View {
     let summary: String
     let colors: OverlayColors
     let lineLimit: Int
+    var heading: Text? = nil
+
+    private var text: Text {
+        guard let heading else { return Text(summary) }
+        return summary.isEmpty ? heading : Text("\(heading) · \(summary)")
+    }
 
     var body: some View {
-        Text(summary)
+        text
             .font(.system(size: OverlayMetrics.summaryFontSize))
             .foregroundStyle(colors.body)
             .lineSpacing(1)
@@ -321,6 +344,7 @@ struct SidebarView: View {
     let open: (Session) -> Void
     let hide: (Session) -> Void
     let showMenu: () -> Void
+    let jump: () -> Void
     var onHighlightRow: ((String) -> Void)? = nil
     var drawsSurface = true
     var presentation = 0
@@ -342,7 +366,6 @@ struct SidebarView: View {
         let rows = store.shownRows
         let entered = jumping ? store.enteredSession : nil
         let keyboardTarget = jumping ? entered?.id : (store.keyboardMode ? store.selectedID : nil)
-        let preview = compact ? rows.first { $0.id == store.selectedID } ?? rows.first : nil
         let shape = RoundedRectangle(cornerRadius: OverlayMetrics.sidebarCornerRadius, style: .continuous)
         return VStack(spacing: 0) {
             if compact && store.query.isEmpty {
@@ -363,15 +386,17 @@ struct SidebarView: View {
             if rows.isEmpty {
                 empty
             } else {
-                sessionList(rows, keyboardTarget: keyboardTarget, previewID: preview?.id, now: now)
+                sessionList(rows, keyboardTarget: keyboardTarget, now: now)
                     .id(jumping)
             }
-            if let row = preview ?? rows.first(where: { $0.id == entered?.id }) {
-                sessionDetail(row, now: now)
+            if let row = rows.first(where: { $0.id == entered?.id }) {
+                jumpDetail(row, now: now)
             }
             footer(rows)
-                .frame(height: OverlayMetrics.footerHeight)
-                .overlay(alignment: .top) { hairline }
+                .frame(height: jumping ? OverlayMetrics.jumpFooterHeight : OverlayMetrics.footerHeight)
+                .overlay(alignment: .top) {
+                    if jumping { hairline }
+                }
         }
         .padding(OverlayMetrics.sidebarInset)
         .frame(width: OverlayMetrics.width)
@@ -464,9 +489,11 @@ struct SidebarView: View {
                         Text(filter.label)
                             .font(.system(size: 11, weight: selected ? .semibold : .medium))
                             .foregroundStyle(selected ? colors.primary : colors.body)
-                        Text(String(count))
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
-                            .foregroundStyle(filterCountColor(filter, count: count))
+                        if !compact || (filter != .all && count > 0) {
+                            Text(String(count))
+                                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                .foregroundStyle(filterCountColor(filter, count: count))
+                        }
                     }
                     .padding(.horizontal, 7)
                     .frame(height: 23)
@@ -509,7 +536,7 @@ struct SidebarView: View {
         .overlay(alignment: .bottom) { hairline }
     }
 
-    private func sessionList(_ rows: [SessionRow], keyboardTarget: String?, previewID: String?, now: Date) -> some View {
+    private func sessionList(_ rows: [SessionRow], keyboardTarget: String?, now: Date) -> some View {
         let numberWidth = OverlayMetrics.numberWidth(for: rows.count)
         let compactRows = compact || jumping
         let nextID = store.nextActionID
@@ -522,7 +549,7 @@ struct SidebarView: View {
                         SidebarRow(row: row, position: index + 1, compact: compactRows, jumping: jumping,
                                    keyboardMode: store.keyboardMode,
                                    keyboardSelected: keyboardTarget == row.id,
-                                   previewSelected: previewID == row.id,
+                                   pointerSelected: compact && !store.keyboardMode && store.selectedID == row.id,
                                    isNext: nextID == row.id, isLatest: latestID == row.id,
                                    isMain: isMain, colors: colors, now: now, numberWidth: numberWidth,
                                    activate: { open(row.session) },
@@ -571,70 +598,32 @@ struct SidebarView: View {
         Button("Archive session", systemImage: "archivebox") { hide(row.session) }
     }
 
-    private func sessionDetail(_ row: SessionRow, now: Date) -> some View {
+    private func jumpDetail(_ row: SessionRow, now: Date) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 8) {
                 Text(row.session.title)
                     .font(.system(size: 14, weight: .semibold))
                     .lineLimit(1)
-                    .accessibilityHidden(compact)
                 Spacer(minLength: 0)
-                Text(compact ? row.session.source.name : row.stateTitle)
+                Text(row.stateTitle)
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(compact ? colors.secondary : row.visualState.tint(colors))
+                    .foregroundStyle(row.visualState.tint(colors))
                     .lineLimit(1)
                     .fixedSize()
-                    .accessibilityHidden(compact)
-                if compact { detailAction(for: row) }
             }
             .frame(height: 18)
             if let summary = row.session.stateSummary, !summary.isEmpty {
-                StateSummary(summary: summary, colors: colors, lineLimit: compact ? 2 : OverlayMetrics.jumpSummaryLines)
-                    .accessibilityHidden(compact)
-            } else if compact {
-                Text("No summary available")
-                    .font(.system(size: 13))
-                    .foregroundStyle(colors.secondary)
-                    .accessibilityHidden(true)
+                StateSummary(summary: summary, colors: colors, lineLimit: OverlayMetrics.jumpSummaryLines)
             }
-            if !compact {
-                RowMetadata(row: row, colors: colors, showsStatus: false, now: now)
-            }
+            RowMetadata(row: row, colors: colors, showsStatus: false, now: now)
         }
         .padding(.horizontal, 12)
-        .padding(.top, compact ? 8 : 0)
-        .frame(height: compact ? OverlayMetrics.compactDetailHeight : OverlayMetrics.jumpDetailHeight(for: row.session),
-               alignment: compact ? .topLeading : .center)
+        .frame(height: OverlayMetrics.jumpDetailHeight(for: row.session))
         .background(colors.inset, in: Rectangle())
         .overlay(alignment: .top) { hairline }
         .help([row.session.title, row.timestampDescription, row.session.stateSummary]
             .compactMap { $0 }.joined(separator: "\n"))
-        .accessibilityHidden(!compact)
-    }
-
-    private func detailAction(for row: SessionRow) -> some View {
-        let action: String
-        switch row.visualState {
-        case .input: action = "Respond"
-        case .review: action = "Review reply"
-        default: action = row.needsReview ? "Review update" : "Open chat"
-        }
-        return Button { open(row.session) } label: {
-            HStack(spacing: 4) {
-                Text(action)
-                    .font(.system(size: 11, weight: .semibold))
-                Image(systemName: "arrow.up.right")
-                    .font(.system(size: 8, weight: .semibold))
-            }
-            .fixedSize()
-            .frame(minHeight: 18)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(row.session.status.requestsAttention && row.visualState != .read
-                         ? row.visualState.tint(colors) : colors.primary)
-        .accessibilityLabel(action)
-        .accessibilityHint("Opens \(row.session.title)")
+        .accessibilityHidden(true)
     }
 
     private var empty: some View {
@@ -678,33 +667,40 @@ struct SidebarView: View {
 
     private func footer(_ rows: [SessionRow]) -> some View {
         HStack(spacing: 9) {
-            if let notice = store.notice {
-                Text(notice).lineLimit(1).accessibilityAddTraits(.updatesFrequently)
-            } else if let number = store.numberEntry {
-                if rows.isEmpty {
+            if let number = store.numberEntry {
+                if let notice = store.notice {
+                    Text(notice).accessibilityAddTraits(.updatesFrequently)
+                } else if rows.isEmpty {
                     Text("No rows to open")
                 } else if number.isEmpty {
                     Text("Type a number")
                 } else if store.enteredSession == nil {
                     Text(rows.count == 1 ? "Choose row 1" : "Choose a row from 1 to \(rows.count)")
                 }
-                Spacer(minLength: 0)
-                hint("Esc", "Cancel")
+                if store.notice == nil {
+                    Spacer(minLength: 0)
+                    hint("Esc", "Cancel")
+                }
             } else {
-                if !rows.isEmpty {
-                    hint("↑↓", "Select")
-                    hint("↵", "Open")
-                } else if store.query.isEmpty {
-                    hint("⌃⌥↵", "Review")
+                if let notice = store.notice {
+                    Text(notice).accessibilityAddTraits(.updatesFrequently)
                 }
                 Spacer(minLength: 0)
-                if store.query.isEmpty {
-                    hint("⌃⌥A", "Archive")
-                } else {
-                    hint("Esc", "Clear")
+                if !rows.isEmpty {
+                    Button(action: jump) {
+                        HStack(spacing: 5) {
+                            Text("Jump").fontWeight(.medium)
+                            Text("⌃⌥0").font(.system(size: 11, weight: .medium, design: .monospaced))
+                        }
+                        .fixedSize()
+                        .padding(.horizontal, 4)
+                        .frame(height: 24)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Jump to row")
+                    .accessibilityHint("Control Option 0")
                 }
-                hint("⌃⌥D", compact ? "Briefing" : "Compact")
-                if !rows.isEmpty { hint("⌃⌥0", "Jump") }
             }
         }
         .font(.system(size: 11))
@@ -735,7 +731,7 @@ private struct SidebarRow: View {
     let jumping: Bool
     let keyboardMode: Bool
     let keyboardSelected: Bool
-    let previewSelected: Bool
+    let pointerSelected: Bool
     let isNext: Bool
     let isLatest: Bool
     let isMain: Bool
@@ -749,10 +745,13 @@ private struct SidebarRow: View {
     @Environment(\.colorSchemeContrast) private var contrast
 
     private var session: Session { row.session }
-    private var selected: Bool { keyboardSelected || previewSelected || (!compact && !keyboardMode && hovered) }
+    private var isCompactList: Bool { compact && !jumping }
+    private var compactUpNext: Bool { isCompactList && position == 1 && isNext }
+    private var selected: Bool { keyboardSelected || pointerSelected || (!compact && !keyboardMode && hovered) }
     private var directShortcut: Bool { Shortcut.numbers.contains(position) }
     private var cue: String? {
-        if !compact { return isNext ? "Up next" : nil }
+        if isCompactList { return nil }
+        if !compact { return isNext ? OverlayMetrics.upNextLabel : nil }
         if isNext { return isLatest ? "Next · Latest" : "Next" }
         return isLatest ? "Latest" : nil
     }
@@ -775,10 +774,9 @@ private struct SidebarRow: View {
             }
             .padding(.horizontal, OverlayMetrics.rowInset)
             .padding(.vertical, compact ? 0 : OverlayMetrics.briefingRowPadding)
-            .frame(height: compact ? OverlayMetrics.compactRowHeight : nil)
             .background {
                 if compact {
-                    RoundedRectangle(cornerRadius: 5).fill(selected ? colors.selection : .clear)
+                    RoundedRectangle(cornerRadius: 5).fill(compactBackground)
                 } else {
                     Rectangle().fill(briefingBackground)
                 }
@@ -792,7 +790,7 @@ private struct SidebarRow: View {
                 }
             }
             .overlay {
-                if keyboardSelected {
+                if keyboardSelected && (!isCompactList || contrast == .increased) {
                     RoundedRectangle(cornerRadius: compact ? 5 : 3)
                         .strokeBorder(colors.secondary.opacity(contrast == .increased ? 1 : 0.48))
                         .allowsHitTesting(false)
@@ -805,7 +803,7 @@ private struct SidebarRow: View {
             hovered = isInside
             if isInside { highlight() }
         }
-        .help([session.title, session.detail, isMain ? "Main Grok agent" : nil, row.stateTitle,
+        .help([session.title, session.source.name, session.detail, isMain ? "Main Grok agent" : nil, row.stateTitle,
                cueDescription, row.stateDescription, row.timestampDescription, session.stateSummary, keyHelp,
                keyboardSelected && !jumping ? (row.needsReview ? "⌘U Mark read" : "⌘U Mark unread") : nil]
             .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n"))
@@ -815,7 +813,12 @@ private struct SidebarRow: View {
                              row.timestampDescription, session.stateSummary,
                              !jumping && directShortcut ? "Shortcut Control Option \(position)" : "Row \(position)"]
             .compactMap { $0 }.joined(separator: ", "))
-        .accessibilityAddTraits(keyboardSelected || previewSelected ? .isSelected : [])
+        .accessibilityAddTraits(keyboardSelected || pointerSelected ? .isSelected : [])
+    }
+
+    private var compactBackground: Color {
+        if keyboardSelected || (pointerSelected && (!compactUpNext || hovered)) { return colors.selection }
+        return compactUpNext ? row.visualState.tint(colors).opacity(0.055) : .clear
     }
 
     private var briefingBackground: Color {
@@ -847,45 +850,57 @@ private struct SidebarRow: View {
     }
 
     private var compactContent: some View {
-        HStack(spacing: 7) {
-            number
-                .frame(width: numberWidth)
-            SessionStateIcon(state: row.visualState, colors: colors)
-            title(compact: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            if row.showsUnreadDot {
-                Circle()
-                    .fill(colors.secondary)
-                    .frame(width: 4, height: 4)
-            }
-            Text(row.stateTitle)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(row.visualState.tint(colors))
-                .fixedSize()
-            if !jumping {
-                ZStack(alignment: .trailing) {
-                    Color.clear
-                    if let timestamp = row.timestamp {
-                        RowTimestamp(date: timestamp, now: now, colors: colors)
-                    }
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: OverlayMetrics.rowSpacing) {
+                number
+                    .frame(width: numberWidth)
+                SessionStateIcon(state: row.visualState, colors: colors)
+                title(compact: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if row.showsUnreadDot {
+                    Circle()
+                        .fill(colors.secondary)
+                        .frame(width: 4, height: 4)
                 }
-                .frame(width: OverlayMetrics.timestampWidth)
+                Text(row.stateTitle)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(row.visualState.tint(colors))
+                    .fixedSize()
+                if !jumping {
+                    ZStack(alignment: .trailing) {
+                        Color.clear
+                        if let timestamp = row.timestamp {
+                            RowTimestamp(date: timestamp, now: now, colors: colors)
+                        }
+                    }
+                    .frame(width: OverlayMetrics.timestampWidth)
+                }
+            }
+            .frame(height: OverlayMetrics.compactRowHeight)
+            if compactUpNext {
+                let heading = Text(OverlayMetrics.upNextLabel)
+                    .foregroundColor(row.visualState.tint(colors))
+                    .fontWeight(.semibold)
+                StateSummary(summary: session.stateSummary ?? "", colors: colors, lineLimit: 2, heading: heading)
+                    .padding(.leading, OverlayMetrics.compactSummaryInset(numberWidth: numberWidth))
+                    .padding(.bottom, OverlayMetrics.compactSummaryBottomPadding)
             }
         }
     }
 
     private var number: some View {
-        RowNumber(label: String(position), highlighted: selected, colors: colors, outlined: !compact)
+        RowNumber(label: String(position), highlighted: selected, colors: colors,
+                  outlined: !compact, boxed: !isCompactList)
             .accessibilityHidden(true)
     }
 
     private func title(compact: Bool) -> some View {
         HStack(spacing: 5) {
             Text(session.title)
-                .font(.system(size: compact ? 13 : 14, weight: compact ? .medium : .semibold))
+                .font(.system(size: compact ? 13 : 14, weight: compact && !compactUpNext ? .medium : .semibold))
                 .lineLimit(1)
                 .truncationMode(.tail)
-            if isMain {
+            if isMain && !isCompactList {
                 Text("Main")
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(colors.secondary)

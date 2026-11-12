@@ -140,7 +140,7 @@ final class SessionStore: ObservableObject {
 
     init(defaults: UserDefaults? = .standard) {
         self.defaults = defaults
-        showsAllSummaries = defaults?.object(forKey: Self.briefingPreferenceKey) as? Bool ?? true
+        showsAllSummaries = defaults?.bool(forKey: Self.briefingPreferenceKey) ?? false
         showsAutomationRuns = defaults?.bool(forKey: Self.automationRunsPreferenceKey) ?? false
         grokMainOnly = defaults?.bool(forKey: "grokMainAgentsOnly") ?? false
         mainGrokIDs = Set(defaults?.stringArray(forKey: "grokMainAgentIDs") ?? [])

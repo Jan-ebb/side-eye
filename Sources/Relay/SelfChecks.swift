@@ -319,7 +319,7 @@ enum SelfChecks {
         store.markUnread(quiet)
         precondition(store.filter == .all && store.count(for: .all) == fixtures.count)
         precondition(store.count(for: .needsInput) == 1 && store.count(for: .toReview) == 2)
-        precondition(store.showsAllSummaries, "A new sidebar should default to Briefing")
+        precondition(!store.showsAllSummaries, "A new sidebar should default to Compact")
 
         var changes = 0
         store.onRowsChanged = { changes += 1 }
@@ -334,7 +334,7 @@ enum SelfChecks {
         store.setQuery("staging")
         store.numberEntry = ""
         store.appendJumpDigit("2")
-        for expanded in [false, true] {
+        for expanded in [true, false] {
             store.setShowsAllSummaries(expanded)
             precondition(store.showsAllSummaries == expanded)
             precondition(store.filter == .toReview && store.query == "staging")
@@ -482,7 +482,7 @@ enum SelfChecks {
             precondition(overlay.isShowing && store.keyboardMode && store.selectedID == "two")
             overlay.checkLayoutAndKeyInput()
             overlay.checkSidebarDensity()
-            precondition(store.showsAllSummaries, "The default preview should show Briefing")
+            precondition(!store.showsAllSummaries, "The default preview should show Compact")
             if let previewDirectory { overlay.renderPreview(in: previewDirectory) }
             overlay.close()
             precondition(!overlay.isShowing && !store.keyboardMode)

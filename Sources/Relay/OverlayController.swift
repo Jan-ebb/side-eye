@@ -134,6 +134,7 @@ final class OverlayController {
         let list = SidebarView(store: store, open: { [weak self] in self?.onOpen?($0) },
                                hide: { [weak self] in self?.onHide?($0) },
                                showMenu: { [weak self] in self?.onShowSettings?() },
+                               jump: { [weak self] in self?.jumpByNumber() },
                                onHighlightRow: { [weak self] in self?.highlightRow($0) },
                                drawsSurface: false)
         let sidebarContent = HoverHost(rootView: list)
@@ -280,6 +281,7 @@ final class OverlayController {
         if !isShowing {
             store.selectedID = store.nextActionID ?? store.shownRows.first?.id
             store.keyboardMode = false
+            keyboardSelectionLocation = NSEvent.mouseLocation
         }
         if keyboard {
             keyboardPinned = true
@@ -317,7 +319,7 @@ final class OverlayController {
     }
 
     private func highlightRow(_ id: String) {
-        // Scrolling the keyboard selection can move rows under a stationary pointer.
+        // Revealing or scrolling the list can move rows under a stationary pointer.
         guard store.numberEntry == nil, keyboardSelectionLocation != NSEvent.mouseLocation else { return }
         keyboardSelectionLocation = nil
         if !keyboardPinned { store.keyboardMode = false }
@@ -555,16 +557,19 @@ final class OverlayController {
     }
 
     func checkSidebarDensity() {
-        precondition(isShowing && store.showsAllSummaries)
+        precondition(isShowing && !store.showsAllSummaries)
         let originalRows = store.shownRows
-        let briefingFrame = sidebar.frame
-
-        store.setShowsAllSummaries(false)
-        precondition(store.shownRows == originalRows, "Layout should preserve row order")
-        precondition(sidebar.frame.maxX == briefingFrame.maxX, "Both layouts must keep the pill's right edge")
+        let compactFrame = sidebar.frame
+        let compactHeight = OverlayMetrics.sidebarHeight(for: store)
 
         store.setShowsAllSummaries(true)
-        precondition(sidebar.frame == briefingFrame, "Briefing should return to its original frame")
+        precondition(store.shownRows == originalRows, "Layout should preserve row order")
+        precondition(OverlayMetrics.sidebarHeight(for: store) > compactHeight,
+                     "Compact should show less chrome and fit in a shorter panel")
+        precondition(sidebar.frame.maxX == compactFrame.maxX, "Both layouts must keep the pill's right edge")
+
+        store.setShowsAllSummaries(false)
+        precondition(sidebar.frame == compactFrame, "Compact should return to its original frame")
     }
 
     func checkPointer() async -> Bool? {
@@ -973,7 +978,20 @@ final class OverlayController {
     private func pointerChanged(_ entered: Bool) {
         guard railPress == nil, !keyboardPinned, menuTrackingDepth == 0 else { return }
         hoverTask?.cancel()
-        if entered && !isShowing && Date() >= blockHoverUntil {
+        if isShowing {
+            // Ordering the sidebar in during a reversal can queue stale enter/exit events.
+            // Use the pointer's current position to decide whether to retract.
+            let point = NSEvent.mouseLocation
+            guard !rail.frame.contains(point), !sidebar.frame.contains(point) else { return }
+            hoverTask = Task { [weak self] in
+                try? await Task.sleep(for: Timing.hoverExit)
+                guard !Task.isCancelled, let self, !self.keyboardPinned, self.menuTrackingDepth == 0 else { return }
+                let point = NSEvent.mouseLocation
+                if !self.rail.frame.contains(point), !self.sidebar.frame.contains(point) {
+                    self.close(morphing: true)
+                }
+            }
+        } else if entered && Date() >= blockHoverUntil {
             hoverTask = Task { [weak self] in
                 try? await Task.sleep(for: Timing.hoverOpen)
                 guard !Task.isCancelled, let self,
@@ -981,15 +999,6 @@ final class OverlayController {
                 self.show(keyboard: false)
                 if self.isShowing {
                     NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
-                }
-            }
-        } else if !entered && isShowing {
-            hoverTask = Task { [weak self] in
-                try? await Task.sleep(for: Timing.hoverExit)
-                guard !Task.isCancelled, let self, !self.keyboardPinned, self.menuTrackingDepth == 0 else { return }
-                let point = NSEvent.mouseLocation
-                if !self.rail.frame.contains(point), !self.sidebar.frame.contains(point) {
-                    self.close(morphing: true)
                 }
             }
         }

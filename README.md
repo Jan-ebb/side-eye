@@ -4,7 +4,7 @@ Relay is a native macOS menu bar app for keeping parallel agent conversations wi
 
 Drag the edge pill up or down to dock it at a different height. Relay saves its position on each display. Hover to grow the pill into the sidebar, and move away to shrink it back. Relay uses native Force Touch feedback on reveal and after a drag settles. Its animations follow the system Reduce Motion setting.
 
-The sidebar opens in **Briefing**, with a short summary, status, app, and timestamp on each row. Press **⌃⌥D** or use the layout button in the header to switch to the compact list. In that view, hover or select a row to see its summary below the list. Relay remembers the layout you choose.
+The sidebar opens in **Compact**, with one line per chat and a short summary for **Up next** when available. Press **⌃⌥D** or use the layout button to switch to **Briefing**, which shows a summary on each row. Relay remembers the layout you choose.
 
 ## Switching
 
@@ -13,7 +13,7 @@ The sidebar opens in **Briefing**, with a short summary, status, app, and timest
 | ⌃⌥Space | Open or close the sidebar. Type to find a chat by name, app, or status. |
 | ⌃⌥1–9 | Open rows 1–9 from top to bottom in the current filter and search results. |
 | ⌃⌥0 | Jump to any numbered row. Type the number, then press Return. |
-| ⌃⌥D | Switch between line and detail views. Opens the sidebar if it’s closed. |
+| ⌃⌥D | Switch between Compact and Briefing. Opens the sidebar if it’s closed. |
 | ⌃⌥Return | Open the next session to review. Input requests come first. |
 | ⌃⌥A | Archive the selected session, or the last one opened through Relay when the sidebar is closed. |
 
@@ -23,7 +23,7 @@ Use Up and Down as soon as the sidebar opens, including on hover. Return opens t
 
 A newly completed turn or input request produces a quiet edge nudge. The edge pill shows the number of chats that still need attention. Pending input requests count until they’re resolved or archived, even after you read them.
 
-The sidebar puts the next chat that needs your attention at the top, followed by the remaining chats in completion order. Row numbers follow the displayed order. Each row shows the age of its last completion or last reported activity. Hover on a row to see the full local date and time.
+The sidebar puts the next chat that needs your attention at the top, followed by the remaining chats in completion order. Row numbers follow the displayed order. Each row shows the age of its last completion or last reported activity. Hover on a row to see the full local date and time and its summary when available.
 
 **To review** marks a result to open. **Needs input** stays visible while a decision or answer is pending. **Working** marks an active turn reported by the source. **Quiet** means the source has reported no new update or request, and **Stale** marks quiet sessions with eight hours without reported activity. **Read** means you opened an update in Relay, marked it read, or its source marked it read. A dot marks unread activity on rows with another status.
 
