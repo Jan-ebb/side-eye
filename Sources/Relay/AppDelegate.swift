@@ -28,8 +28,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             SelfChecks.diagnoseLiveSources()
             return
         }
-        let lightPreview = fixtureMode && ProcessInfo.processInfo.environment["RELAY_PREVIEW_APPEARANCE"] == "light"
-        NSApp.appearance = NSAppearance(named: lightPreview ? .aqua : .darkAqua)
+        let darkPreview = fixtureMode && ProcessInfo.processInfo.environment["RELAY_PREVIEW_APPEARANCE"] == "dark"
+        NSApp.appearance = NSAppearance(named: darkPreview ? .darkAqua : .aqua)
 
         if CommandLine.arguments.contains("--settings-check") {
             loadSettingsFixture()
