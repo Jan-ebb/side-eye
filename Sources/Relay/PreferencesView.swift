@@ -267,7 +267,7 @@ struct PreferencesView: View {
                 statusDefinition("Needs input", "An approval, decision, or answer is pending.")
                 statusDefinition("Working", "The source reports an active turn.")
                 statusDefinition("Quiet", "The source has reported no new result or input request.")
-                statusDefinition("Stale", "A quiet session with no reported activity for eight hours.")
+                statusDefinition("Inactive", "A quiet session with no reported activity for eight hours.")
                 statusDefinition("Status unavailable", "Relay has no status signal for this session.")
             }
             .padding(.top, 10)

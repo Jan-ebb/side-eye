@@ -553,6 +553,15 @@ enum SelfChecks {
                    stateSummary: "The shortcut was tested successfully in full-screen windows."),
             sample("five", .instinct, "Instinct", .unknown, .distantPast),
         ] + (6...14).map { position in
+            if position == 6 {
+                var read = sample("row-6", .codex, "Check deployment notes", .ready, previousDay,
+                                  completedAt: previousDay)
+                read.reviewedBySource = true
+                return read
+            }
+            if position == 7 {
+                return sample("row-7", .cursor, "Explore sidebar spacing", .idle, now.addingTimeInterval(-2_700))
+            }
             let title = position == 13 ? "Check billing report" : "Session \(position)"
             return sample("row-\(position)", .codex, title, .idle, previousDay.addingTimeInterval(-Double(position)),
                           stateSummary: position == 13 ? "The draft lists three invoices still to reconcile." : nil)

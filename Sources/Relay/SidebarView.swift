@@ -25,6 +25,7 @@ enum OverlayMetrics {
     static let briefingRowPadding: CGFloat = 9
     static let briefingTitleHeight: CGFloat = 18
     static let rowMetadataHeight: CGFloat = 15
+    static let statusBadgeHeight: CGFloat = 20
     static let briefingLineGap: CGFloat = 2
     static let briefingViewportRows = 6
     static let compactRowHeight: CGFloat = 29
@@ -56,7 +57,7 @@ enum OverlayMetrics {
     private static func briefingRowHeight(for session: Session, tailWidth: CGFloat) -> CGFloat {
         let textWidth = width - 2 * (sidebarInset + listInset + rowInset) - rowSpacing - tailWidth
         let summary = summaryHeight(session.stateSummary, width: textWidth - 2, limit: 2)
-        let chrome = briefingTitleHeight + rowMetadataHeight + briefingLineGap + 2 * briefingRowPadding
+        let chrome = briefingTitleHeight + statusBadgeHeight + briefingLineGap + 2 * briefingRowPadding
         return summary == 0 ? chrome : chrome + briefingLineGap + summary
     }
 
@@ -131,12 +132,12 @@ struct OverlayColors {
     var selection: Color { color(0x2B2B30, 0xEDF0FC) }
     var accent: Color { color(0xADB6FB, 0x464EA8) }
     var inset: Color { color(0x242426, 0xF4F4F3) }
-    var input: Color { color(0xE6B571, 0x855014) }
-    var review: Color { color(0x89D1A9, 0x236248) }
-    var working: Color { color(0x8CB7EF, 0x2F5895) }
-    var inputBadgeFill: Color { color(0x382D23, 0xFAEBD4) }
-    var reviewBadgeFill: Color { color(0x20382E, 0xE3F4EB) }
-    var workingBadgeFill: Color { color(0x243449, 0xE6EFFD) }
+    var input: Color { color(0xF5C577, 0x704400) }
+    var review: Color { color(0x9AD9AB, 0x1E5938) }
+    var working: Color { color(0x9AD9F0, 0x145574) }
+    var inputBadgeFill: Color { color(0x483420, 0xF8D68D) }
+    var reviewBadgeFill: Color { color(0x274336, 0xCDEBD4) }
+    var workingBadgeFill: Color { color(0x263E50, 0xCBE8F6) }
 
     private func color(_ darkHex: UInt32, _ lightHex: UInt32) -> Color {
         let hex = dark ? darkHex : lightHex
@@ -270,16 +271,26 @@ private struct RowStatus: View {
     let row: SessionRow
     let colors: OverlayColors
 
+    @Environment(\.colorSchemeContrast) private var contrast
+
     var body: some View {
         let state = row.visualState
         let fill = state.badgeFill(colors)
+        let tint = state.tint(colors)
+        let shape = RoundedRectangle(cornerRadius: 5)
         Text(row.stateTitle)
-            .font(.system(size: 11, weight: fill == nil ? .medium : .semibold))
-            .foregroundStyle(state.tint(colors))
+            .font(.system(size: fill == nil ? 11 : 12, weight: fill == nil ? .medium : .semibold))
+            .foregroundStyle(tint)
             .lineLimit(1)
-            .padding(.horizontal, 6)
-            .frame(height: 18)
-            .background(fill ?? .clear, in: RoundedRectangle(cornerRadius: 4))
+            .padding(.horizontal, 7)
+            .frame(height: OverlayMetrics.statusBadgeHeight)
+            .background(fill ?? .clear, in: shape)
+            .overlay {
+                if fill != nil {
+                    let borderOpacity = contrast == .increased ? 0.68 : (state == .input ? 0.42 : 0.30)
+                    shape.strokeBorder(tint.opacity(borderOpacity), lineWidth: 1)
+                }
+            }
             .fixedSize()
             .accessibilityHidden(true)
     }
@@ -335,14 +346,19 @@ private struct RowMetadata: View {
     let row: SessionRow
     let colors: OverlayColors
     var showsStatus = true
+    var showsBadge = false
     var now: Date = .now
 
     var body: some View {
         HStack(spacing: 6) {
             if showsStatus {
-                Text(row.stateTitle)
-                    .fontWeight(row.visualState.badgeFill(colors) == nil ? .medium : .semibold)
-                    .foregroundStyle(row.visualState.tint(colors))
+                if showsBadge {
+                    RowStatus(row: row, colors: colors)
+                } else {
+                    Text(row.stateTitle)
+                        .fontWeight(row.visualState.badgeFill(colors) == nil ? .medium : .semibold)
+                        .foregroundStyle(row.visualState.tint(colors))
+                }
                 separator
             }
             Text(row.session.source.name)
@@ -359,7 +375,7 @@ private struct RowMetadata: View {
         }
         .font(.system(size: 11))
         .lineLimit(1)
-        .frame(height: OverlayMetrics.rowMetadataHeight)
+        .frame(height: showsBadge ? OverlayMetrics.statusBadgeHeight : OverlayMetrics.rowMetadataHeight)
         .accessibilityHidden(true)
     }
 
@@ -958,7 +974,7 @@ private struct SidebarRow: View {
                 if let summary = session.stateSummary, !summary.isEmpty {
                     StateSummary(summary: summary, colors: colors, lineLimit: 2)
                 }
-                RowMetadata(row: row, colors: colors)
+                RowMetadata(row: row, colors: colors, showsBadge: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             VStack(alignment: .trailing, spacing: 4) {

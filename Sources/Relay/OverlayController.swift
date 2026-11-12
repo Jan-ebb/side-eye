@@ -630,6 +630,9 @@ final class OverlayController {
         precondition(OverlayMetrics.sidebarHeight(for: store) > compactHeight,
                      "Compact should show less chrome and fit in a shorter panel")
         precondition(sidebar.frame.maxX == compactFrame.maxX, "Both layouts must keep the pill's right edge")
+        if let path = ProcessInfo.processInfo.environment["RELAY_PREVIEW_DIRECTORY"] {
+            renderPreview(in: URL(fileURLWithPath: path).appendingPathComponent("briefing"))
+        }
 
         store.setShowsAllSummaries(false)
         precondition(sidebar.frame == compactFrame, "Compact should return to its original frame")
