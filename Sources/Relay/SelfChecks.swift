@@ -109,16 +109,19 @@ enum SelfChecks {
         ordered.ingest([older, newer, blocked])
         precondition(ordered.rows.map(\.id) == ["newer", "older", blocked.id],
                      "Completion order should win over last activity")
-        precondition(ordered.session(in: 1)?.id == newer.id && ordered.session(in: 2)?.id == older.id)
+        precondition(ordered.shownRows.map(\.id) == [blocked.id, newer.id, older.id],
+                     "Only the next action should move ahead of completion order")
+        precondition((1...3).compactMap { ordered.session(in: $0)?.id } == ordered.shownRows.map(\.id),
+                     "Number shortcuts should follow the displayed rows from the top")
         precondition(ordered.nextAttention()?.id == blocked.id, "Input requests should stay first in the attention queue")
 
         let finished = sample("older", .codex, "Finished again", .ready, now, activityID: "turn-2", completedAt: now)
         ordered.ingest([finished, newer, blocked])
-        precondition(ordered.session(in: 1)?.id == finished.id && ordered.session(in: 2)?.id == newer.id,
+        precondition(ordered.session(in: 2)?.id == finished.id && ordered.session(in: 3)?.id == newer.id,
                      "A new completion should change its shortcut to match its new row")
         ordered.hide(finished)
-        precondition(ordered.session(in: 1)?.id == newer.id)
-        precondition(ordered.undoHide() && ordered.session(in: 1)?.id == finished.id)
+        precondition(ordered.session(in: 2)?.id == newer.id)
+        precondition(ordered.undoHide() && ordered.session(in: 2)?.id == finished.id)
 
         let running = sample("older", .codex, "Running another turn", .working, now.addingTimeInterval(1))
         ordered.ingest([running, newer, blocked])
@@ -303,7 +306,7 @@ enum SelfChecks {
         let store = SessionStore(defaults: nil)
         let newest = sample("newest", .codex, "Export retry", .ready, now.addingTimeInterval(-120),
                             completedAt: now.addingTimeInterval(-120), stateSummary: "Rerun the staging checks.")
-        let older = sample("older", .cursor, "Export layout", .ready, now,
+        let older = sample("older", .cursor, "Export layout", .ready, now.addingTimeInterval(-180),
                            completedAt: now.addingTimeInterval(-600), stateSummary: "Check the staging layout.")
         let blocked = sample("blocked", .claude, "Export approval", .needsInput, now)
         let working = sample("working", .grok, "Export tests", .working, now, stateSummary: "Running staging tests.")
@@ -316,7 +319,7 @@ enum SelfChecks {
         store.markUnread(quiet)
         precondition(store.filter == .all && store.count(for: .all) == fixtures.count)
         precondition(store.count(for: .needsInput) == 1 && store.count(for: .toReview) == 2)
-        precondition(!store.showsAllSummaries, "A new sidebar should default to compact rows")
+        precondition(store.showsAllSummaries, "A new sidebar should default to Briefing")
 
         var changes = 0
         store.onRowsChanged = { changes += 1 }
@@ -331,7 +334,7 @@ enum SelfChecks {
         store.setQuery("staging")
         store.numberEntry = ""
         store.appendJumpDigit("2")
-        for expanded in [true, false] {
+        for expanded in [false, true] {
             store.setShowsAllSummaries(expanded)
             precondition(store.showsAllSummaries == expanded)
             precondition(store.filter == .toReview && store.query == "staging")
@@ -414,9 +417,11 @@ enum SelfChecks {
 
         precondition(store.nextActionID == input.id && store.attentionCount == 4)
         precondition(store.latestReplyID == readReply.id, "Latest reply should include read replies and fall back to their update time")
-        precondition(store.session(in: 1)?.id == reply.id, "Attention markers must preserve completion order and row numbers")
+        precondition(store.session(in: 1)?.id == input.id && store.session(in: 2)?.id == reply.id,
+                     "The next action should get shortcut 1 and leave the other rows in completion order")
         store.markRead(input)
-        precondition(store.nextActionID == earlierInput.id && store.attentionCount == 4)
+        precondition(store.nextActionID == earlierInput.id && store.session(in: 1)?.id == earlierInput.id
+                     && store.attentionCount == 4)
         precondition(!store.isAttentionPending(for: input), "Reading pending input should still dismiss its nudge")
         store.acknowledge(earlierInput)
         precondition(store.nextActionID == reply.id && store.nextAttention()?.id == reply.id)
@@ -446,7 +451,8 @@ enum SelfChecks {
         let now = Date()
         let previousDay = now.addingTimeInterval(-27 * 60 * 60)
         let fixtures = [
-            sample("one", .codex, "Review sidebar navigation", .ready, previousDay, completedAt: previousDay,
+            sample("one", .codex, "Review sidebar navigation", .ready, now.addingTimeInterval(-45),
+                   completedAt: now.addingTimeInterval(-45),
                    stateSummary: "The sidebar opens on hover and is ready for a final interaction check."),
             sample("two", .claude, "Update integration tests", .needsInput, now,
                    completedAt: now.addingTimeInterval(-180), stateSummary: "Claude is waiting for approval to run the integration tests."),
@@ -476,7 +482,7 @@ enum SelfChecks {
             precondition(overlay.isShowing && store.keyboardMode && store.selectedID == "two")
             overlay.checkLayoutAndKeyInput()
             overlay.checkSidebarDensity()
-            precondition(!store.showsAllSummaries, "The default preview should show the compact sidebar")
+            precondition(store.showsAllSummaries, "The default preview should show Briefing")
             if let previewDirectory { overlay.renderPreview(in: previewDirectory) }
             overlay.close()
             precondition(!overlay.isShowing && !store.keyboardMode)

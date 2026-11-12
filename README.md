@@ -4,7 +4,7 @@ Relay is a native macOS menu bar app for keeping parallel agent conversations wi
 
 Drag the edge pill up or down to dock it at a different height. Relay saves its position on each display. Hover to grow the pill into the sidebar, and move away to shrink it back. Relay uses native Force Touch feedback on reveal and after a drag settles. Its animations follow the system Reduce Motion setting.
 
-The compact sidebar shows one line per chat. Hover or select a row to see its latest summary below the list. Press **⌃⌥D** or use **Show all summaries** in the header to switch between line and detail views. Relay remembers the layout you choose.
+The sidebar opens in **Briefing**, with a short summary, status, app, and timestamp on each row. Press **⌃⌥D** or use the layout button in the header to switch to the compact list. In that view, hover or select a row to see its summary below the list. Relay remembers the layout you choose.
 
 ## Switching
 
@@ -23,7 +23,7 @@ Use Up and Down as soon as the sidebar opens, including on hover. Return opens t
 
 A newly completed turn or input request produces a quiet edge nudge. The edge pill shows the number of chats that still need attention. Pending input requests count until they’re resolved or archived, even after you read them.
 
-The sidebar puts the most recent completions first and renumbers all rows as they move. **Next** marks the recommended action, and **Latest** marks the newest finished reply in the current view. Each row shows the age of its last completion or last reported activity. Hover on a row to see the full local date and time.
+The sidebar puts the next chat that needs your attention at the top, followed by the remaining chats in completion order. Row numbers follow the displayed order. Each row shows the age of its last completion or last reported activity. Hover on a row to see the full local date and time.
 
 **To review** marks a result to open. **Needs input** stays visible while a decision or answer is pending. **Working** marks an active turn reported by the source. **Quiet** means the source has reported no new update or request, and **Stale** marks quiet sessions with eight hours without reported activity. **Read** means you opened an update in Relay, marked it read, or its source marked it read. A dot marks unread activity on rows with another status.
 

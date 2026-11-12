@@ -289,6 +289,9 @@ final class OverlayController {
         sidebar.acceptsKeyboard = true
         position()
         if !sidebar.isVisible {
+            if let content = sidebar.contentView as? HoverHost<SidebarView> {
+                content.rootView.presentation += 1
+            }
             expandSidebar()
         }
         installClickMonitors()
@@ -552,18 +555,16 @@ final class OverlayController {
     }
 
     func checkSidebarDensity() {
-        precondition(isShowing && !store.showsAllSummaries)
+        precondition(isShowing && store.showsAllSummaries)
         let originalRows = store.shownRows
-        let compactHeight = OverlayMetrics.sidebarHeight(for: store)
-        let compactFrame = sidebar.frame
-
-        store.setShowsAllSummaries(true)
-        precondition(store.shownRows == originalRows, "Layout should preserve row order")
-        precondition(OverlayMetrics.sidebarHeight(for: store) > compactHeight)
-        precondition(sidebar.frame.maxX == compactFrame.maxX && sidebar.frame.height >= compactFrame.height)
+        let briefingFrame = sidebar.frame
 
         store.setShowsAllSummaries(false)
-        precondition(sidebar.frame == compactFrame, "Compact layout should return to its original frame")
+        precondition(store.shownRows == originalRows, "Layout should preserve row order")
+        precondition(sidebar.frame.maxX == briefingFrame.maxX, "Both layouts must keep the pill's right edge")
+
+        store.setShowsAllSummaries(true)
+        precondition(sidebar.frame == briefingFrame, "Briefing should return to its original frame")
     }
 
     func checkPointer() async -> Bool? {
@@ -690,8 +691,10 @@ final class OverlayController {
         guard isShowing else { return false }
 
         // The settings button and the drag start both share the rail's hit area.
-        let settings = CGPoint(x: sidebar.frame.maxX - OverlayMetrics.sidebarInset - 21,
-                               y: sidebar.frame.maxY - OverlayMetrics.sidebarInset - OverlayMetrics.compactToolbarHeight / 2)
+        let headerHeight = store.showsAllSummaries ? OverlayMetrics.headerHeight : OverlayMetrics.compactToolbarHeight
+        let settingsInset: CGFloat = store.showsAllSummaries ? 25 : 21
+        let settings = CGPoint(x: sidebar.frame.maxX - OverlayMetrics.sidebarInset - settingsInset,
+                               y: sidebar.frame.maxY - OverlayMetrics.sidebarInset - headerHeight / 2)
         if rail.frame.contains(settings) {
             let originalSettings = onShowSettings
             var openedSettings = false

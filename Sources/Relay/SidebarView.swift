@@ -19,7 +19,12 @@ enum OverlayMetrics {
     static let iconWidth: CGFloat = 18
     static let shortcutWidth: CGFloat = 24
     static let timestampWidth: CGFloat = 30
-    static let rowGap: CGFloat = 2
+    static let briefingTailWidth: CGFloat = 42
+    static let briefingRowPadding: CGFloat = 9
+    static let briefingTitleHeight: CGFloat = 18
+    static let rowMetadataHeight: CGFloat = 15
+    static let briefingLineGap: CGFloat = 2
+    static let briefingViewportRows = 6
     static let compactRowHeight: CGFloat = 27
     static let compactToolbarHeight: CGFloat = 38
     static let compactDetailHeight: CGFloat = 72
@@ -42,10 +47,11 @@ enum OverlayMetrics {
         return lines * summaryLineHeight
     }
 
-    static func rowHeight(for session: Session) -> CGFloat {
-        let textWidth = width - 2 * (sidebarInset + listInset + rowInset + rowSpacing) - iconWidth - timestampWidth
+    private static func briefingRowHeight(for session: Session, tailWidth: CGFloat) -> CGFloat {
+        let textWidth = width - 2 * (sidebarInset + listInset + rowInset + rowSpacing) - iconWidth - tailWidth
         let summary = summaryHeight(session.stateSummary, width: textWidth - 2, limit: 2)
-        return summary == 0 ? 49 : 51 + summary
+        let chrome = briefingTitleHeight + rowMetadataHeight + briefingLineGap + 2 * briefingRowPadding
+        return summary == 0 ? chrome : chrome + briefingLineGap + summary
     }
 
     static func nudgeSize(for session: Session?) -> NSSize {
@@ -61,12 +67,16 @@ enum OverlayMetrics {
         return summary == 0 ? 56 : 59 + summary
     }
 
-    static func listHeight(for rows: [SessionRow]) -> CGFloat {
-        let visible = rows.prefix(8)
-        guard !visible.isEmpty else { return emptyHeight }
-        return visible.reduce(11 + CGFloat(visible.count - 1) * rowGap) {
-            $0 + rowHeight(for: $1.session)
+    private static func briefingListHeight(for rows: [SessionRow]) -> CGFloat {
+        guard !rows.isEmpty else { return emptyHeight }
+        let tailWidth = max(briefingTailWidth, numberWidth(for: rows.count))
+        return rows.prefix(briefingViewportRows).reduce(11) {
+            $0 + briefingRowHeight(for: $1.session, tailWidth: tailWidth)
         }
+    }
+
+    static func numberWidth(for rowCount: Int) -> CGFloat {
+        max(shortcutWidth, 8 + 7 * CGFloat(String(rowCount).count))
     }
 
     private static func compactListHeight(for count: Int) -> CGFloat {
@@ -81,7 +91,7 @@ enum OverlayMetrics {
             return headerHeight + jumpBarHeight + compactListHeight(for: min(rows.count, 18))
                 + detailHeight + footerHeight + 2
         }
-        if store.showsAllSummaries { return frameChrome + listHeight(for: rows) }
+        if store.showsAllSummaries { return frameChrome + briefingListHeight(for: rows) }
         let chrome = store.query.isEmpty ? compactToolbarHeight + footerHeight + 2 : frameChrome
         return chrome + compactListHeight(for: min(rows.count, 12)) + (rows.isEmpty ? 0 : compactDetailHeight)
     }
@@ -236,6 +246,7 @@ private struct RowNumber: View {
     let label: String
     let highlighted: Bool
     let colors: OverlayColors
+    var outlined = false
 
     var body: some View {
         Text(label)
@@ -246,7 +257,7 @@ private struct RowNumber: View {
             .frame(minWidth: OverlayMetrics.shortcutWidth, minHeight: 19)
             .background(highlighted ? colors.inset : .clear, in: RoundedRectangle(cornerRadius: 4))
             .overlay {
-                if highlighted {
+                if highlighted || outlined {
                     RoundedRectangle(cornerRadius: 4).strokeBorder(colors.divider)
                 }
             }
@@ -261,18 +272,16 @@ private struct RowMetadata: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Text(row.session.source.name)
-                .foregroundStyle(colors.secondary)
-            if showsStatus || row.timestamp != nil {
-                Circle()
-                    .fill(colors.secondary)
-                    .frame(width: 2, height: 2)
-            }
             if showsStatus {
                 Text(row.stateTitle)
                     .fontWeight(.medium)
                     .foregroundStyle(row.visualState.tint(colors))
-            } else if let timestamp = row.timestamp {
+                separator
+            }
+            Text(row.session.source.name)
+                .foregroundStyle(colors.secondary)
+            if !showsStatus, let timestamp = row.timestamp {
+                separator
                 RowTimestamp(date: timestamp, now: now, colors: colors)
             }
             if row.showsUnreadDot {
@@ -283,8 +292,12 @@ private struct RowMetadata: View {
         }
         .font(.system(size: 11))
         .lineLimit(1)
-        .frame(height: 15)
+        .frame(height: OverlayMetrics.rowMetadataHeight)
         .accessibilityHidden(true)
+    }
+
+    private var separator: some View {
+        Circle().fill(colors.secondary).frame(width: 2, height: 2)
     }
 }
 
@@ -310,6 +323,7 @@ struct SidebarView: View {
     let showMenu: () -> Void
     var onHighlightRow: ((String) -> Void)? = nil
     var drawsSurface = true
+    var presentation = 0
 
     @Environment(\.colorScheme) private var scheme
     @Environment(\.colorSchemeContrast) private var contrast
@@ -418,7 +432,7 @@ struct SidebarView: View {
 
     private var summaryToggle: some View {
         let expanded = store.showsAllSummaries
-        let title = expanded ? "Show compact list" : "Show all summaries"
+        let title = expanded ? "Show compact list" : "Show Briefing"
         return headerButton(title, icon: expanded ? "list.bullet" : "list.bullet.rectangle",
                             help: "\(title) (⌃⌥D)") {
             store.setShowsAllSummaries(!expanded)
@@ -496,13 +510,13 @@ struct SidebarView: View {
     }
 
     private func sessionList(_ rows: [SessionRow], keyboardTarget: String?, previewID: String?, now: Date) -> some View {
-        let numberWidth = max(OverlayMetrics.shortcutWidth, 8 + 7 * CGFloat(String(rows.count).count))
+        let numberWidth = OverlayMetrics.numberWidth(for: rows.count)
         let compactRows = compact || jumping
         let nextID = store.nextActionID
         let latestID = store.latestReplyID
         return ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(spacing: compactRows ? 1 : OverlayMetrics.rowGap) {
+                LazyVStack(spacing: compactRows ? 1 : 0) {
                     ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                         let isMain = row.session.source == .grok && store.mainGrokIDs.contains(row.id)
                         SidebarRow(row: row, position: index + 1, compact: compactRows, jumping: jumping,
@@ -529,7 +543,10 @@ struct SidebarView: View {
                 if let id { proxy.scrollTo(id) }
             }
             .onChange(of: store.filter) {
-                if let id = keyboardTarget ?? rows.first?.id { proxy.scrollTo(id) }
+                if let id = keyboardTarget ?? rows.first?.id { proxy.scrollTo(id, anchor: .top) }
+            }
+            .onChange(of: presentation) {
+                if let id = keyboardTarget ?? rows.first?.id { proxy.scrollTo(id, anchor: .top) }
             }
             .onChange(of: compactRows) {
                 if let keyboardTarget { proxy.scrollTo(keyboardTarget) }
@@ -686,7 +703,7 @@ struct SidebarView: View {
                 } else {
                     hint("Esc", "Clear")
                 }
-                hint("⌃⌥D", "Details")
+                hint("⌃⌥D", compact ? "Briefing" : "Compact")
                 if !rows.isEmpty { hint("⌃⌥0", "Jump") }
             }
         }
@@ -735,6 +752,7 @@ private struct SidebarRow: View {
     private var selected: Bool { keyboardSelected || previewSelected || (!compact && !keyboardMode && hovered) }
     private var directShortcut: Bool { Shortcut.numbers.contains(position) }
     private var cue: String? {
+        if !compact { return isNext ? "Up next" : nil }
         if isNext { return isLatest ? "Next · Latest" : "Next" }
         return isLatest ? "Latest" : nil
     }
@@ -753,15 +771,29 @@ private struct SidebarRow: View {
         Button(action: activate) {
             Group {
                 if compact { compactContent }
-                else { standardContent }
+                else { briefingContent }
             }
             .padding(.horizontal, OverlayMetrics.rowInset)
-            .padding(.vertical, compact ? 0 : 7)
+            .padding(.vertical, compact ? 0 : OverlayMetrics.briefingRowPadding)
             .frame(height: compact ? OverlayMetrics.compactRowHeight : nil)
-            .background(selected ? colors.selection : .clear, in: RoundedRectangle(cornerRadius: compact ? 5 : 7))
+            .background {
+                if compact {
+                    RoundedRectangle(cornerRadius: 5).fill(selected ? colors.selection : .clear)
+                } else {
+                    Rectangle().fill(briefingBackground)
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if !compact {
+                    Rectangle()
+                        .fill(contrast == .increased ? colors.secondary : colors.divider)
+                        .frame(height: 1)
+                        .allowsHitTesting(false)
+                }
+            }
             .overlay {
                 if keyboardSelected {
-                    RoundedRectangle(cornerRadius: compact ? 5 : 7)
+                    RoundedRectangle(cornerRadius: compact ? 5 : 3)
                         .strokeBorder(colors.secondary.opacity(contrast == .increased ? 1 : 0.48))
                         .allowsHitTesting(false)
                 }
@@ -786,23 +818,31 @@ private struct SidebarRow: View {
         .accessibilityAddTraits(keyboardSelected || previewSelected ? .isSelected : [])
     }
 
-    private var standardContent: some View {
+    private var briefingBackground: Color {
+        if selected { return colors.selection }
+        return isNext ? row.visualState.tint(colors).opacity(0.07) : .clear
+    }
+
+    private var briefingContent: some View {
         HStack(alignment: .top, spacing: OverlayMetrics.rowSpacing) {
             SessionStateIcon(state: row.visualState, colors: colors)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: OverlayMetrics.briefingLineGap) {
                 title(compact: false)
-                    .frame(height: 18)
+                    .frame(height: OverlayMetrics.briefingTitleHeight)
                 if let summary = session.stateSummary, !summary.isEmpty {
                     StateSummary(summary: summary, colors: colors, lineLimit: 2)
                 }
                 RowMetadata(row: row, colors: colors)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            VStack(spacing: 4) {
+            VStack(alignment: .trailing, spacing: 4) {
                 number
-                if let timestamp = row.timestamp { RowTimestamp(date: timestamp, now: now, colors: colors) }
+                if let timestamp = row.timestamp {
+                    RowTimestamp(date: timestamp, now: now, colors: colors)
+                        .frame(minWidth: OverlayMetrics.shortcutWidth)
+                }
             }
-            .frame(width: max(numberWidth, OverlayMetrics.timestampWidth))
+            .frame(width: max(numberWidth, OverlayMetrics.briefingTailWidth), alignment: .trailing)
         }
     }
 
@@ -835,7 +875,7 @@ private struct SidebarRow: View {
     }
 
     private var number: some View {
-        RowNumber(label: String(position), highlighted: selected, colors: colors)
+        RowNumber(label: String(position), highlighted: selected, colors: colors, outlined: !compact)
             .accessibilityHidden(true)
     }
 

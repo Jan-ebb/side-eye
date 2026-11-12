@@ -24,6 +24,7 @@ enum SessionFilter: CaseIterable, Hashable {
 @MainActor
 final class SessionStore: ObservableObject {
     nonisolated static let automationRunsPreferenceKey = "showsAutomationRuns"
+    private static let briefingPreferenceKey = "sidebarUsesBriefing"
     private static let staleAge: TimeInterval = 8 * 60 * 60
     @Published private(set) var rows: [SessionRow] = []
     @Published private(set) var hiddenCount = 0
@@ -48,6 +49,18 @@ final class SessionStore: ObservableObject {
     }
 
     var shownRows: [SessionRow] {
+        var visible = matchingRows
+        let nextAction = visible.indices.lazy.filter { Self.needsAction(visible[$0]) }.min { lhs, rhs in
+            Self.actionFirst(visible[lhs], visible[rhs])
+        }
+        if let nextAction, nextAction > 0 {
+            let row = visible.remove(at: nextAction)
+            visible.insert(row, at: 0)
+        }
+        return visible
+    }
+
+    private var matchingRows: [SessionRow] {
         let scoped = filter == .all ? rows : rows.filter(filter.includes)
         let terms = query.split(whereSeparator: \.isWhitespace)
         if terms.isEmpty { return scoped }
@@ -60,12 +73,8 @@ final class SessionStore: ObservableObject {
     }
 
     var nextActionID: String? {
-        shownRows.lazy.filter(Self.needsAction).min { first, second in
-            let firstPriority = Self.actionPriority(first)
-            let secondPriority = Self.actionPriority(second)
-            if firstPriority != secondPriority { return firstPriority < secondPriority }
-            return Self.attentionFirst(first.session, second.session)
-        }?.id
+        guard let first = shownRows.first, Self.needsAction(first) else { return nil }
+        return first.id
     }
 
     var latestReplyID: String? {
@@ -87,7 +96,7 @@ final class SessionStore: ObservableObject {
     func setShowsAllSummaries(_ value: Bool) {
         guard value != showsAllSummaries else { return }
         showsAllSummaries = value
-        defaults?.set(value, forKey: "sidebarShowsAllSummaries")
+        defaults?.set(value, forKey: Self.briefingPreferenceKey)
         onRowsChanged?()
     }
 
@@ -131,7 +140,7 @@ final class SessionStore: ObservableObject {
 
     init(defaults: UserDefaults? = .standard) {
         self.defaults = defaults
-        showsAllSummaries = defaults?.bool(forKey: "sidebarShowsAllSummaries") ?? false
+        showsAllSummaries = defaults?.object(forKey: Self.briefingPreferenceKey) as? Bool ?? true
         showsAutomationRuns = defaults?.bool(forKey: Self.automationRunsPreferenceKey) ?? false
         grokMainOnly = defaults?.bool(forKey: "grokMainAgentsOnly") ?? false
         mainGrokIDs = Set(defaults?.stringArray(forKey: "grokMainAgentIDs") ?? [])
@@ -414,6 +423,13 @@ final class SessionStore: ObservableObject {
         case (.needsInput, false): 2
         default: 3
         }
+    }
+
+    private static func actionFirst(_ a: SessionRow, _ b: SessionRow) -> Bool {
+        let first = actionPriority(a)
+        let second = actionPriority(b)
+        if first != second { return first < second }
+        return attentionFirst(a.session, b.session)
     }
 
     private static func completionFirst(_ a: Session, _ b: Session) -> Bool {
