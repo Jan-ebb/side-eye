@@ -23,9 +23,23 @@ final class SidebarMorph {
         var shadowOpacity: Float
     }
 
-    static let geometryAnimationKey = "relayMorphGeometry"
-    static let openingEasing = CAMediaTimingFunction(controlPoints: 0.24, 0.64, 0.32, 1)
-    private static let retractionEasing = CAMediaTimingFunction(controlPoints: 0.22, 0.82, 0.26, 1)
+    enum Motion {
+        case opening, retraction
+
+        var duration: TimeInterval { self == .opening ? 0.240 : 0.100 }
+
+        var easing: CAMediaTimingFunction {
+            switch self {
+            case .opening: CAMediaTimingFunction(controlPoints: 0.24, 0.64, 0.32, 1)
+            case .retraction: CAMediaTimingFunction(controlPoints: 0.22, 0.82, 0.26, 1)
+            }
+        }
+    }
+
+    // A single small rebound at the end of the opening. Only the free edge stretches.
+    private static let openingPeak: Double = 0.80
+    private static let openingOvershoot: CGFloat = 4
+    private static let geometryAnimationKey = "relayMorphGeometry"
     private static let appearanceAnimationKey = "relayMorphAppearance"
     private static let countPositionKey = "relayMorphCountPosition"
     private static let countOpacityKey = "relayMorphCountOpacity"
@@ -74,10 +88,9 @@ final class SidebarMorph {
 
     @discardableResult
     func transition(from initial: Shape, to target: Shape, count: String?, countColor: NSColor,
-                    duration: TimeInterval, easing: CAMediaTimingFunction? = nil) -> Shape {
-        let easing = easing ?? Self.retractionEasing
+                    motion: Motion? = nil) -> Shape {
         let start = presentedShape(fallback: initial)
-        let extent = duration > 0 ? initial.rect.union(target.rect) : target.rect
+        let extent = motion != nil ? initial.rect.union(target.rect) : target.rect
         let area = extent.insetBy(dx: -Self.shadowPadding, dy: -Self.shadowPadding)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -86,12 +99,11 @@ final class SidebarMorph {
         let localStart = start.rect.offsetBy(dx: -origin.x, dy: -origin.y)
         let localTarget = target.rect.offsetBy(dx: -origin.x, dy: -origin.y)
         Self.animateGeometry(of: shell, from: localStart, to: localTarget,
-                             fromRadius: start.radius, toRadius: target.radius, duration: duration, easing: easing)
+                             fromRadius: start.radius, toRadius: target.radius, motion: motion)
         window.effectiveAppearance.performAsCurrentDrawingAppearance {
-            animateAppearance(from: start, to: target, duration: duration, easing: easing)
+            animateAppearance(from: start, to: target, motion: motion)
             animateCount(count, color: countColor, from: localStart, to: localTarget,
-                         fromOpacity: start.countOpacity, toOpacity: target.countOpacity,
-                         duration: duration, easing: easing)
+                         fromOpacity: start.countOpacity, toOpacity: target.countOpacity, motion: motion)
         }
         CATransaction.commit()
         previousStart = start
@@ -108,8 +120,7 @@ final class SidebarMorph {
     }
 
     static func animateGeometry(of layer: CALayer, from start: CGRect, to target: CGRect,
-                                fromRadius: CGFloat, toRadius: CGFloat, duration: TimeInterval,
-                                easing: CAMediaTimingFunction) {
+                                fromRadius: CGFloat, toRadius: CGFloat, motion: Motion?) {
         let startBounds = CGRect(origin: .zero, size: start.size)
         let targetBounds = CGRect(origin: .zero, size: target.size)
         let startPosition = position(of: start, anchor: layer.anchorPoint)
@@ -120,12 +131,33 @@ final class SidebarMorph {
         layer.bounds = targetBounds
         layer.position = targetPosition
         layer.cornerRadius = toRadius
-        if duration > 0 {
+        if let motion {
+            let duration = motion.duration
+            let bounds: CAPropertyAnimation
+            let position = animation("position", from: NSValue(point: startPosition),
+                                     to: NSValue(point: targetPosition), duration: duration)
+            let radius = animation("cornerRadius", from: fromRadius, to: toRadius, duration: duration)
+            let groupEasing: CAMediaTimingFunction
+            if motion == .opening {
+                var peak = targetBounds
+                peak.size.width = max(startBounds.width, targetBounds.width + openingOvershoot)
+                let spring = CAKeyframeAnimation(keyPath: "bounds")
+                spring.values = [startBounds, peak, targetBounds].map(NSValue.init(rect:))
+                spring.keyTimes = [0, NSNumber(value: openingPeak), 1]
+                spring.timingFunctions = [motion.easing, CAMediaTimingFunction(name: .easeInEaseOut)]
+                spring.duration = duration
+                bounds = spring
+                position.timingFunction = motion.easing
+                radius.timingFunction = motion.easing
+                groupEasing = CAMediaTimingFunction(name: .linear)
+            } else {
+                bounds = animation("bounds", from: NSValue(rect: startBounds), to: NSValue(rect: targetBounds),
+                                   duration: duration)
+                groupEasing = motion.easing
+            }
             addGroup([
-                animation("bounds", from: NSValue(rect: startBounds), to: NSValue(rect: targetBounds), duration: duration),
-                animation("position", from: NSValue(point: startPosition), to: NSValue(point: targetPosition), duration: duration),
-                animation("cornerRadius", from: fromRadius, to: toRadius, duration: duration)
-            ], to: layer, forKey: geometryAnimationKey, duration: duration, easing: easing)
+                bounds, position, radius
+            ], to: layer, forKey: geometryAnimationKey, duration: duration, easing: groupEasing)
         } else {
             layer.removeAnimation(forKey: geometryAnimationKey)
         }
@@ -146,8 +178,7 @@ final class SidebarMorph {
                      shadowOpacity: rendered.shadowOpacity)
     }
 
-    private func animateAppearance(from start: Shape, to target: Shape, duration: TimeInterval,
-                                   easing: CAMediaTimingFunction) {
+    private func animateAppearance(from start: Shape, to target: Shape, motion: Motion?) {
         let startFill = Self.cgColor(start.fill)
         let targetFill = Self.cgColor(target.fill)
         let startStroke = Self.cgColor(start.stroke)
@@ -155,20 +186,20 @@ final class SidebarMorph {
         shell.backgroundColor = targetFill
         shell.borderColor = targetStroke
         shell.shadowOpacity = target.shadowOpacity
-        guard duration > 0 else {
+        guard let motion else {
             shell.removeAnimation(forKey: Self.appearanceAnimationKey)
             return
         }
+        let duration = motion.duration
         Self.addGroup([
             Self.animation("backgroundColor", from: startFill, to: targetFill, duration: duration),
             Self.animation("borderColor", from: startStroke, to: targetStroke, duration: duration),
             Self.animation("shadowOpacity", from: start.shadowOpacity, to: target.shadowOpacity, duration: duration)
-        ], to: shell, forKey: Self.appearanceAnimationKey, duration: duration, easing: easing)
+        ], to: shell, forKey: Self.appearanceAnimationKey, duration: duration, easing: motion.easing)
     }
 
     private func animateCount(_ count: String?, color: NSColor, from start: CGRect, to target: CGRect,
-                              fromOpacity: Float, toOpacity: Float, duration: TimeInterval,
-                              easing: CAMediaTimingFunction) {
+                              fromOpacity: Float, toOpacity: Float, motion: Motion?) {
         let startPosition = CGPoint(x: start.midX, y: start.midY)
         let targetPosition = CGPoint(x: target.midX, y: target.midY)
         if let count {
@@ -183,15 +214,16 @@ final class SidebarMorph {
         }
         countLayer.position = targetPosition
         countLayer.opacity = toOpacity
-        guard duration > 0, count != nil else {
+        guard let motion, count != nil else {
             countLayer.removeAnimation(forKey: Self.countPositionKey)
             countLayer.removeAnimation(forKey: Self.countOpacityKey)
             return
         }
 
+        let duration = motion.duration
         let movement = Self.animation("position", from: NSValue(point: startPosition),
                                       to: NSValue(point: targetPosition), duration: duration)
-        movement.timingFunction = easing
+        movement.timingFunction = motion.easing
         countLayer.add(movement, forKey: Self.countPositionKey)
 
         let opacity = CAKeyframeAnimation(keyPath: "opacity")

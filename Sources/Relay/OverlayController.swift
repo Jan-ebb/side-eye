@@ -55,13 +55,12 @@ private final class HoverHost<Content: View>: NSHostingView<Content> {
 
 @MainActor
 final class OverlayController {
-    // Hover: the pill waits 20 ms, then its outline becomes the sidebar in 210 ms.
+    // Hover: the pill waits 20 ms, then expands and settles. Content fades in before the settle ends.
     // Exit: the outline returns to the pill in 100 ms, with reentry able to reverse it.
     private enum Timing {
         static let hoverOpen: Duration = .milliseconds(20)
         static let hoverExit: Duration = .milliseconds(25)
-        static let expand: TimeInterval = 0.210
-        static let collapse: TimeInterval = 0.100
+        static let contentReveal: TimeInterval = 0.210
         static let reentryCheck: Duration = .milliseconds(12)
     }
 
@@ -374,18 +373,17 @@ final class OverlayController {
         collapseTask?.cancel()
         collapseTask = nil
         let final = sidebarShape()
-        let duration = isEdgeVisible && !reduceMotion ? Timing.expand : 0
-        let initial = duration > 0 ? pillShape(phase: railMotion.phase) : final
+        let motion: SidebarMorph.Motion? = isEdgeVisible && !reduceMotion ? .opening : nil
+        let initial = motion != nil ? pillShape(phase: railMotion.phase) : final
         let presented = morph.transition(from: initial, to: final, count: pillCount,
-                                         countColor: pillCountColor, duration: duration,
-                                         easing: SidebarMorph.openingEasing)
+                                         countColor: pillCountColor, motion: motion)
         setPillVisible(false)
-        if duration > 0 { revealSidebarContent(from: presented, duration: duration) }
+        if motion != nil { revealSidebarContent(from: presented) }
         morph.window.orderFrontRegardless()
         sidebar.orderFrontRegardless()
     }
 
-    private func revealSidebarContent(from start: SidebarMorph.Shape, duration: TimeInterval) {
+    private func revealSidebarContent(from start: SidebarMorph.Shape) {
         guard let layer = sidebar.contentView?.layer else { return }
         let frame = sidebar.frame
         let startY = layer.isGeometryFlipped ? frame.maxY - start.rect.maxY : start.rect.minY - frame.minY
@@ -395,11 +393,11 @@ final class OverlayController {
         SidebarMorph.animateGeometry(of: sidebarMask, from: startInSidebar,
                                      to: CGRect(origin: .zero, size: frame.size),
                                      fromRadius: start.radius, toRadius: OverlayMetrics.sidebarCornerRadius,
-                                     duration: duration, easing: SidebarMorph.openingEasing)
+                                     motion: .opening)
         let opacity = CAKeyframeAnimation(keyPath: "opacity")
         opacity.values = [0, 0, 1]
         opacity.keyTimes = [0, 0.27, 1]
-        opacity.duration = duration
+        opacity.duration = Timing.contentReveal
         layer.add(opacity, forKey: Self.revealAnimationKey)
     }
 
@@ -412,9 +410,9 @@ final class OverlayController {
     private func collapseSidebar(from start: SidebarMorph.Shape) {
         collapseTask?.cancel()
         let destination = pillShape(phase: .idle)
-        morph.transition(from: start, to: destination, count: pillCount,
-                         countColor: pillCountColor, duration: Timing.collapse)
-        let deadline = ContinuousClock.now.advanced(by: .seconds(Timing.collapse))
+        let motion = SidebarMorph.Motion.retraction
+        morph.transition(from: start, to: destination, count: pillCount, countColor: pillCountColor, motion: motion)
+        let deadline = ContinuousClock.now.advanced(by: .seconds(motion.duration))
         collapseTask = Task { [weak self] in
             while ContinuousClock.now < deadline {
                 try? await Task.sleep(for: Timing.reentryCheck)
@@ -587,13 +585,26 @@ final class OverlayController {
         guard rail.frame.contains(NSEvent.mouseLocation) else { return nil }
         defer { move(original) }
         let rightEdge = pillShape(phase: .idle).rect.maxX
-        if !reduceMotion {
-            guard let rendered = morph.presentedFrame, abs(rendered.maxX - rightEdge) < 0.6 else {
-                print("Hover fixture: the expanding outline lost its right edge anchor.")
+        if reduceMotion {
+            try? await Task.sleep(for: .milliseconds(235))
+        } else {
+            var widest: CGFloat = 0
+            let end = ContinuousClock.now.advanced(by: .milliseconds(235))
+            repeat {
+                guard rail.frame.contains(NSEvent.mouseLocation) else { return nil }
+                guard let rendered = morph.presentedFrame, abs(rendered.maxX - rightEdge) < 0.6 else {
+                    print("Hover fixture: the expanding outline lost its right edge anchor.")
+                    return false
+                }
+                widest = max(widest, rendered.width)
+                try? await Task.sleep(for: .milliseconds(12))
+            } while ContinuousClock.now < end
+            guard (1...5).contains(widest - sidebar.frame.width),
+                  let settled = morph.presentedFrame, abs(settled.width - sidebar.frame.width) < 0.6 else {
+                print("Hover fixture: the opening did not make a small rebound and settle.")
                 return false
             }
         }
-        try? await Task.sleep(for: .milliseconds(235))
         guard isShowing, !store.keyboardMode, morph.window.isVisible, !railMotion.showsPill else {
             print("Hover fixture at the rail: visible=\(isShowing), pill=\(railMotion.showsPill).")
             return false
@@ -861,7 +872,7 @@ final class OverlayController {
         if nudge.frame != nudgeFrame { nudge.setFrame(nudgeFrame, display: nudge.isVisible) }
         if isShowing && (railMoved || sidebarMoved) {
             let shape = sidebarShape()
-            morph.transition(from: shape, to: shape, count: pillCount, countColor: pillCountColor, duration: 0)
+            morph.transition(from: shape, to: shape, count: pillCount, countColor: pillCountColor)
             clearContentReveal()
         } else if railMoved && collapseTask != nil {
             finishCollapse()
