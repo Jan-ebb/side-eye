@@ -17,6 +17,8 @@ enum OverlayMetrics {
     static let rowInset: CGFloat = 8
     static let rowSpacing: CGFloat = 7
     static let iconWidth: CGFloat = 18
+    static let sourceIconSize: CGFloat = 13
+    static let sourceIconSpacing: CGFloat = 5
     static let shortcutWidth: CGFloat = 24
     static let timestampWidth: CGFloat = 30
     static let briefingTailWidth: CGFloat = 42
@@ -83,7 +85,7 @@ enum OverlayMetrics {
     }
 
     static func compactSummaryInset(numberWidth: CGFloat) -> CGFloat {
-        numberWidth + iconWidth + 2 * rowSpacing
+        numberWidth + iconWidth + 2 * rowSpacing + sourceIconSize + sourceIconSpacing
     }
 
     private static func compactListHeight(for count: Int) -> CGFloat {
@@ -896,7 +898,10 @@ private struct SidebarRow: View {
     }
 
     private func title(compact: Bool) -> some View {
-        HStack(spacing: 5) {
+        HStack(spacing: OverlayMetrics.sourceIconSpacing) {
+            SourceAppIcon(source: session.source, size: OverlayMetrics.sourceIconSize)
+                .frame(width: OverlayMetrics.sourceIconSize, height: OverlayMetrics.sourceIconSize)
+                .accessibilityHidden(true)
             Text(session.title)
                 .font(.system(size: jumping ? 13 : 14, weight: compact && !compactUpNext ? .medium : .semibold))
                 .lineLimit(1)
