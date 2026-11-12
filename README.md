@@ -23,9 +23,9 @@ Use Up and Down as soon as the sidebar opens, including on hover. Return opens t
 
 A newly completed turn or input request produces a quiet edge nudge. The edge pill shows the number of chats that still need attention. Pending input requests count until they’re resolved or archived, even after you read them.
 
-The sidebar puts the next chat that needs your attention at the top, followed by the remaining chats in completion order. Row numbers follow the displayed order. Each row shows the age of its last completion or last reported activity. Hover on a row to see the full local date and time and its summary when available.
+The sidebar puts the next chat that needs your attention at the top, followed by the remaining chats in completion order. Row numbers follow the displayed order. Finished rows show the age of their last completion. Other rows show the age of their latest reported activity. Hover on a row to see the full local date and time and its summary when available.
 
-**To review** marks a result to open. **Needs input** stays visible while a decision or answer is pending. **Working** marks an active turn reported by the source. **Quiet** means the source has reported no new update or request, and **Stale** marks quiet sessions with eight hours without reported activity. **Read** means you opened an update in Relay, marked it read, or its source marked it read. A dot marks unread activity on rows with another status.
+**To review** marks a result to open. **Needs input** stays visible while a decision or answer is pending. **Working** marks an active turn reported by the source. **Quiet** means the source has reported no new update or request, and **Inactive** marks quiet sessions with eight hours without reported activity. **Read** means you opened an update in Relay, marked it read, or its source marked it read. A dot marks unread activity on rows with another status.
 
 **Summarize recent chat text** uses a local model to write one sentence about the latest request, result, and any supported next action. Relay reads bounded excerpts from the apps’ local caches and keeps the summary in memory. The model runs only when needed and shuts down when idle. Rows rely on available source metadata when a recent transcript is absent.
 

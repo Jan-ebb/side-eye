@@ -66,7 +66,7 @@ final class SessionStore: ObservableObject {
         if terms.isEmpty { return scoped }
         return scoped.filter { row in
             let text = [row.session.title, row.session.source.name, row.session.detail, row.statusLabel,
-                        row.needsReview ? "Unread" : "", row.session.stateSummary ?? ""]
+                        row.needsReview ? "Unread" : "", row.isStale ? "Stale" : "", row.session.stateSummary ?? ""]
                 .joined(separator: " ")
             return terms.allSatisfy { text.localizedStandardContains(String($0)) }
         }

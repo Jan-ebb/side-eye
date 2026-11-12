@@ -129,6 +129,9 @@ struct OverlayColors {
     var input: Color { color(0xE6B571, 0x855014) }
     var review: Color { color(0x89D1A9, 0x236248) }
     var working: Color { color(0x8CB7EF, 0x2F5895) }
+    var inputBadgeFill: Color { color(0x382D23, 0xFAEBD4) }
+    var reviewBadgeFill: Color { color(0x20382E, 0xE3F4EB) }
+    var workingBadgeFill: Color { color(0x243449, 0xE6EFFD) }
 
     private func color(_ darkHex: UInt32, _ lightHex: UInt32) -> Color {
         let hex = dark ? darkHex : lightHex
@@ -157,6 +160,15 @@ private enum SessionVisualState {
         case .input: colors.input
         case .working: colors.working
         case .read, .quiet, .stale, .unavailable: colors.secondary
+        }
+    }
+
+    func badgeFill(_ colors: OverlayColors) -> Color? {
+        switch self {
+        case .input: colors.inputBadgeFill
+        case .review: colors.reviewBadgeFill
+        case .working: colors.workingBadgeFill
+        case .read, .quiet, .stale, .unavailable: nil
         }
     }
 }
@@ -215,6 +227,10 @@ private extension SessionRow {
 
     var stateDescription: String? {
         switch session.status {
+        case .needsInput:
+            return "Waiting for you to respond or approve."
+        case .working:
+            return "The source reports an active turn."
         case .ready:
             return needsReview ? "Queued for review." : "The latest update is marked as read."
         case .idle where session.source != .instinct:
@@ -225,16 +241,42 @@ private extension SessionRow {
         }
     }
 
+    private var shownCompletion: Date? {
+        session.status == .ready ? session.completedAt : nil
+    }
+
     var timestamp: Date? {
-        if let completedAt = session.completedAt { return completedAt }
-        if session.updatedAt > .distantPast, session.detail != "Pinned link" { return session.updatedAt }
-        return nil
+        if let shownCompletion { return shownCompletion }
+        guard session.detail != "Pinned link" else { return nil }
+        let activity = session.status == .idle
+            ? max(session.updatedAt, session.completedAt ?? .distantPast)
+            : session.updatedAt
+        return activity > .distantPast ? activity : nil
     }
 
     var timestampDescription: String? {
         guard let timestamp else { return nil }
-        let event = session.completedAt == nil ? "Last activity" : "Completed"
+        let event = shownCompletion == nil ? "Last activity" : "Completed"
         return "\(event) \(timestamp.formatted(date: .abbreviated, time: .shortened))"
+    }
+}
+
+private struct RowStatus: View {
+    let row: SessionRow
+    let colors: OverlayColors
+
+    var body: some View {
+        let state = row.visualState
+        let fill = state.badgeFill(colors)
+        Text(row.stateTitle)
+            .font(.system(size: 11, weight: fill == nil ? .medium : .semibold))
+            .foregroundStyle(state.tint(colors))
+            .lineLimit(1)
+            .padding(.horizontal, 6)
+            .frame(height: 18)
+            .background(fill ?? .clear, in: RoundedRectangle(cornerRadius: 4))
+            .fixedSize()
+            .accessibilityHidden(true)
     }
 }
 
@@ -294,7 +336,7 @@ private struct RowMetadata: View {
         HStack(spacing: 6) {
             if showsStatus {
                 Text(row.stateTitle)
-                    .fontWeight(.medium)
+                    .fontWeight(row.visualState.badgeFill(colors) == nil ? .medium : .semibold)
                     .foregroundStyle(row.visualState.tint(colors))
                 separator
             }
@@ -863,10 +905,7 @@ private struct SidebarRow: View {
                         .fill(colors.secondary)
                         .frame(width: 4, height: 4)
                 }
-                Text(row.stateTitle)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(row.visualState.tint(colors))
-                    .fixedSize()
+                RowStatus(row: row, colors: colors)
                 if !jumping {
                     ZStack(alignment: .trailing) {
                         Color.clear

@@ -149,7 +149,7 @@ enum SelfChecks {
         age.ingest([quiet, oldWorking, oldInput], now: now)
         precondition(age.rows.first { $0.id == quiet.id }?.statusLabel == "Quiet")
         age.ingest([quiet, oldWorking, oldInput], now: now.addingTimeInterval(3))
-        precondition(age.rows.first { $0.id == quiet.id }?.statusLabel == "Stale")
+        precondition(age.rows.first { $0.id == quiet.id }?.statusLabel == "Inactive")
         precondition(age.rows.first { $0.id == oldWorking.id }?.statusLabel == "Working")
         precondition(age.rows.first { $0.id == oldInput.id }?.statusLabel == "Needs input")
         checkRailPlacement()
@@ -456,7 +456,7 @@ enum SelfChecks {
                    stateSummary: "The sidebar opens on hover and is ready for a final interaction check."),
             sample("two", .claude, "Update integration tests", .needsInput, now,
                    completedAt: now.addingTimeInterval(-180), stateSummary: "Claude is waiting for approval to run the integration tests."),
-            sample("three", .cursor, "Fix export layout", .working, now.addingTimeInterval(-600),
+            sample("three", .cursor, "Fix export layout", .working, now.addingTimeInterval(-600), completedAt: previousDay,
                    stateSummary: "The cloud agent is adjusting export spacing and checking narrow layouts."),
             sample("four", .grok, "Research shortcuts", .idle, previousDay,
                    stateSummary: "The shortcut was tested successfully in full-screen windows."),
