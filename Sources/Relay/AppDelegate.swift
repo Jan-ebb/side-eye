@@ -43,6 +43,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.overlay = overlay
         overlay.onOpen = { [weak self] in self?.open($0) }
         overlay.onHide = { [weak self] in self?.hide($0) }
+        overlay.onLater = { [weak self] in self?.toggleLater($0) }
+        overlay.onRestoreArchived = { [weak self] in self?.restoreArchived($0) }
         overlay.onUndo = { [weak self] in self?.undoHide() }
         overlay.onShowSettings = { [weak self] in self?.showSettings() }
         preferences.onEdgeVisibility = { [weak overlay] in overlay?.setEdgeVisible($0) }
@@ -97,6 +99,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.autoenablesItems = false
         let entries: [(String, Selector, String)] = [
             ("Show sessions", #selector(showSessions), ""),
+            ("Show Archive", #selector(showArchive), ""),
             ("Add session link…", #selector(addSessionLink), ""),
             ("Settings…", #selector(showSettings), ","),
         ]
@@ -171,6 +174,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .details:
             overlay?.toggleDetails()
         case .archive:
+            if overlay?.isShowing == true, store.filter == .archive { return }
             if let session = store.removeTarget(allowSelection: overlay?.isShowing ?? false) {
                 hide(session)
             } else {
@@ -182,7 +186,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func open(_ requested: Session) {
-        guard let session = store.rows.first(where: { $0.id == requested.id })?.session else { return }
+        guard let session = store.session(id: requested.id) else { return }
         overlay?.close()
         overlay?.clearAttentionNudge()
         if RouteOpener.open(session.route) {
@@ -198,7 +202,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         overlay?.report("Session archived")
     }
 
+    private func toggleLater(_ session: Session) {
+        guard let deferred = store.toggleLater(session) else { return }
+        overlay?.report(deferred ? "Moved to Later" : "Moved back to All")
+    }
+
+    private func restoreArchived(_ session: Session) {
+        if store.restoreArchived(session) { overlay?.report("Session restored") }
+    }
+
     @objc private func showSessions() { overlay?.show(keyboard: true) }
+    @objc private func showArchive() { overlay?.showArchive() }
     @objc private func quit() { NSApp.terminate(nil) }
 
     @objc private func jumpToNext() {
@@ -207,7 +221,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func undoHide() {
-        overlay?.report(store.undoHide() ? "Session restored" : "No recent archive")
+        overlay?.report(store.undoHide() ? "Last move undone" : "Nothing to undo")
     }
 
     @objc private func configureInstinct() {

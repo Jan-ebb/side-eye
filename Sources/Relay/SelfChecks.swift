@@ -100,6 +100,8 @@ enum SelfChecks {
 
         checkAttentionFilters(now: now)
         checkAttentionMarkers(now: now)
+        checkLater(now: now)
+        checkArchive(now: now)
 
         let ordered = SessionStore(defaults: nil)
         let older = sample("older", .codex, "Older completion", .ready, now,
@@ -154,7 +156,7 @@ enum SelfChecks {
         precondition(age.rows.first { $0.id == oldInput.id }?.statusLabel == "Needs input")
         checkRailPlacement()
         checkCodexAutomationVisibility(now: now)
-        print("Session checks passed (attention markers and filters, summary layouts, completion order, number jumps, status age, Grok scope and summary updates).")
+        print("Session checks passed (attention, Later, Archive, search, layouts, completion order, shortcuts, status age, Grok scope and summaries).")
         print("Rail placement checks passed.")
         print("Codex automation visibility checks passed.")
     }
@@ -445,6 +447,95 @@ enum SelfChecks {
         store.hide(earlierInput)
         store.markRead(reply)
         precondition(store.nextActionID == flagged.id && store.latestReplyID == readReply.id && store.attentionCount == 1)
+    }
+
+    private static func checkLater(now: Date) {
+        let suite = "com.relay.sessions.later-self-test.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else { preconditionFailure("Missing test preferences") }
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let store = SessionStore(defaults: defaults)
+        let input = sample("z-input", .claude, "Approval requested", .needsInput, now,
+                           stateSummary: "Private summary stays in memory.")
+        let review = sample("review", .codex, "Review export", .ready, now)
+        let working = sample("a-working", .cursor, "Fix layout", .working, now)
+        store.ingest([input, review, working], now: now)
+        precondition(store.toggleLater(input) == true && store.toggleLater(working) == true)
+        precondition(store.count(for: .all) == 1 && store.count(for: .later) == 2 && store.workingCount == 0)
+        precondition(store.attentionCount == 1 && store.count(for: .needsInput) == 0 && store.count(for: .toReview) == 1)
+        precondition(store.nextAttention()?.id == review.id && !store.isAttentionPending(for: input))
+
+        store.setFilter(.later)
+        precondition(store.nextActionID == nil && store.session(in: 1)?.id == working.id
+                     && store.session(in: 2)?.id == input.id)
+        store.setQuery("")
+        precondition(store.isSearching && store.query.isEmpty && store.shownRows.count == 2)
+        store.setQuery("approval")
+        precondition(store.session(in: 1)?.id == input.id && store.removeTarget(allowSelection: true)?.id == input.id)
+        store.setQuery(nil)
+        precondition(!store.isSearching && store.query.isEmpty && store.shownRows.count == 2)
+
+        let finished = sample(input.id, .claude, input.title, .ready, now, activityID: "finished")
+        store.onAttention = { _ in preconditionFailure("Deferred chats must not nudge") }
+        store.ingest([finished, review, working], now: now)
+        precondition(store.count(for: .toReview) == 1 && !store.isAttentionPending(for: finished))
+        store.hide(finished)
+        precondition(store.count(for: .later) == 1 && store.undoHide() && store.count(for: .later) == 2)
+        precondition(store.toggleLater(finished) == false && store.count(for: .toReview) == 2)
+        precondition(store.undoHide() && store.count(for: .later) == 2 && store.count(for: .toReview) == 1)
+
+        let reloaded = SessionStore(defaults: defaults)
+        reloaded.ingest([], now: now)
+        reloaded.setFilter(.later)
+        guard let saved = reloaded.shownRows.first(where: { $0.id == input.id })?.session else {
+            preconditionFailure("Deferred chat should survive a missing source")
+        }
+        precondition(saved.route == input.route && saved.status == .unknown && saved.stateSummary == nil)
+        precondition(reloaded.toggleLater(saved) == false)
+        reloaded.setFilter(.all)
+        precondition(reloaded.session(in: 1)?.id == input.id && reloaded.attentionCount == 0)
+        precondition(reloaded.undoHide() && reloaded.shownRows.isEmpty && reloaded.count(for: .later) == 2)
+    }
+
+    private static func checkArchive(now: Date) {
+        let suite = "com.relay.sessions.archive-self-test.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else { preconditionFailure("Missing test preferences") }
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let legacy = sample("legacy", .codex, "Legacy archive", .ready, now)
+        let older = now.addingTimeInterval(-60).timeIntervalSinceReferenceDate
+        let oldHistory: [String: Any] = ["dismissed": [legacy.id: older, "missing": older], "seen": [:], "links": []]
+        defaults.set(try! JSONSerialization.data(withJSONObject: oldHistory), forKey: "sessionHistory")
+        let store = SessionStore(defaults: defaults)
+        precondition(store.count(for: .archive) == 0 && store.missingArchiveCount == 2)
+
+        let active = (1...20).map { position in
+            sample("active-\(position)", .codex, "Archive result \(position)", .ready, now,
+                   stateSummary: "The live summary must not be saved.")
+        }
+        store.ingest(active + [legacy], now: now)
+        precondition(store.count(for: .archive) == 1 && store.missingArchiveCount == 1)
+        precondition(store.toggleLater(active[0]) == true)
+        for session in active { store.hide(session) }
+        precondition(store.rows.isEmpty && store.count(for: .later) == 0 && store.count(for: .archive) == 21)
+        precondition(store.attentionCount == 0 && store.nextAttention() == nil && !store.isAttentionPending(for: legacy))
+
+        store.setFilter(.archive)
+        precondition(store.shownRows.last?.needsReview == true && store.session(in: 21)?.id == legacy.id)
+        precondition(store.nextActionID == nil && store.removeTarget(allowSelection: true) == nil)
+        store.hide(legacy)
+        precondition(store.shownRows.last?.id == legacy.id, "Archiving again must not change archive order")
+        precondition(store.undoHide() && store.rows.first?.id == active.last?.id)
+
+        let reloaded = SessionStore(defaults: defaults)
+        reloaded.ingest([], now: now)
+        reloaded.setFilter(.archive)
+        precondition(reloaded.missingArchiveCount == 1 && reloaded.shownRows.count == 20)
+        precondition(reloaded.session(id: legacy.id)?.route == legacy.route)
+        guard let restored = reloaded.session(id: active[0].id) else { preconditionFailure("Missing archived route") }
+        precondition(restored.status == .unknown && restored.stateSummary == nil && restored.route == active[0].route)
+        precondition(reloaded.restoreArchived(restored) && reloaded.count(for: .later) == 1)
+        precondition(reloaded.count(for: .all) == 0 && reloaded.count(for: .archive) == 19)
     }
 
     static func checkOverlay(_ overlay: OverlayController, store: SessionStore, missing: [Shortcut]) {

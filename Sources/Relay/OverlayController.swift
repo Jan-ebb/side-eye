@@ -106,6 +106,8 @@ final class OverlayController {
 
     var onOpen: ((Session) -> Void)?
     var onHide: ((Session) -> Void)?
+    var onLater: ((Session) -> Void)?
+    var onRestoreArchived: ((Session) -> Void)?
     var onUndo: (() -> Void)?
     var onShowSettings: (() -> Void)?
 
@@ -135,6 +137,9 @@ final class OverlayController {
                                hide: { [weak self] in self?.onHide?($0) },
                                showMenu: { [weak self] in self?.onShowSettings?() },
                                jump: { [weak self] in self?.jumpByNumber() },
+                               search: { [weak self] in self?.beginSearch() },
+                               toggleLater: { [weak self] in self?.onLater?($0) },
+                               restoreArchived: { [weak self] in self?.onRestoreArchived?($0) },
                                onHighlightRow: { [weak self] in self?.highlightRow($0) },
                                drawsSurface: false)
         let sidebarContent = HoverHost(rootView: list)
@@ -247,6 +252,19 @@ final class OverlayController {
         store.selectedID = store.shownRows.first?.id
     }
 
+    private func beginSearch() {
+        setNumberEntry(nil)
+        if !store.isSearching { store.setQuery("") }
+        if !keyboardPinned { show(keyboard: true) }
+    }
+
+    func showArchive() {
+        setNumberEntry(nil)
+        store.setQuery(nil)
+        store.setFilter(.archive)
+        show(keyboard: true)
+    }
+
     func useNumberShortcut(_ position: Int) {
         if store.numberEntry != nil {
             typeJumpDigit(String(position))
@@ -313,7 +331,8 @@ final class OverlayController {
         if let collapseFrom { collapseSidebar(from: collapseFrom) }
         else { finishCollapse() }
         setNumberEntry(nil)
-        store.setQuery("")
+        store.setQuery(nil)
+        if store.filter == .archive { store.setFilter(.all) }
         removeClickMonitors()
         syncRailMotion()
     }
@@ -547,13 +566,49 @@ final class OverlayController {
         press("1", code: 18)
         press("2", code: 19)
         precondition(store.numberEntry == "12" && openedID == nil)
-        if let path = ProcessInfo.processInfo.environment["RELAY_PREVIEW_DIRECTORY"] {
-            renderPreview(in: URL(fileURLWithPath: path))
-        }
+        let previewDirectory = ProcessInfo.processInfo.environment["RELAY_PREVIEW_DIRECTORY"].map(URL.init(fileURLWithPath:))
+        if let previewDirectory { renderPreview(in: previewDirectory) }
         press("\r", code: 36)
         precondition(openedID == twelfth, "Entering 12 and Return should open the twelfth row")
         setNumberEntry(nil)
         store.selectedID = store.shownRows.first?.id
+
+        press("/", code: 44)
+        precondition(store.isSearching && store.query.isEmpty)
+        press("e", code: 14)
+        press("l", code: 37)
+        precondition(store.query == "el" && store.count(for: .later) == 0,
+                     "Archive and Later keys must type normally in search")
+        press("\u{1b}", code: 53)
+        precondition(!store.isSearching && isShowing)
+
+        store.selectedID = "two"
+        press("l", code: 37)
+        precondition(!store.shownRows.contains { $0.id == "two" } && store.count(for: .later) == 1)
+        store.setFilter(.later)
+        if let previewDirectory { renderPreview(in: previewDirectory.appendingPathComponent("later")) }
+        press("1", code: 18)
+        precondition(openedID == "two", "Later should have its own numbered rows")
+        press("e", code: 14)
+        precondition(store.shownRows.isEmpty, "E should archive a selected Later row")
+        showArchive()
+        precondition(store.shownRows.map(\.id) == ["two"], "Archived chats must remain in the Archive list")
+        if let previewDirectory { renderPreview(in: previewDirectory.appendingPathComponent("archive")) }
+        openedID = nil
+        press("1", code: 18)
+        precondition(openedID == "two", "Archive should have its own numbered rows")
+        press("e", code: 14)
+        precondition(store.shownRows.map(\.id) == ["two"], "E should not archive the same chat twice")
+        press("z", code: 6, flags: .command)
+        precondition(store.shownRows.isEmpty)
+        store.setFilter(.later)
+        precondition(store.shownRows.map(\.id) == ["two"], "Undo should restore an archived row to Later")
+        press("l", code: 37)
+        precondition(store.shownRows.isEmpty && store.count(for: .later) == 0)
+        store.setFilter(.all)
+        precondition(store.shownRows.first?.id == "two", "L in Later should move the chat back to All")
+        store.selectedID = store.shownRows.first?.id
+        store.notice = nil
     }
 
     func checkSidebarDensity() {
@@ -1049,9 +1104,9 @@ final class OverlayController {
         let rows = store.shownRows
         switch event.keyCode {
         case 53:
-            if store.query.isEmpty { close() } else { store.setQuery("") }
+            if store.isSearching { store.setQuery(nil) } else { close() }
         case 48:
-            let filters = SessionFilter.allCases
+            let filters = SessionFilter.tabs
             if let current = filters.firstIndex(of: store.filter) {
                 let direction = flags.contains(.shift) ? -1 : 1
                 store.setFilter(filters[(current + direction + filters.count) % filters.count])
@@ -1059,18 +1114,32 @@ final class OverlayController {
         case 36, 76:
             if let session = rows.first(where: { $0.id == store.selectedID })?.session { onOpen?(session) }
         case 51, 117:
-            if !store.query.isEmpty { store.setQuery(String(store.query.dropLast())) }
+            if store.isSearching { store.setQuery(String(store.query.dropLast())) }
             else if let target = store.removeTarget(allowSelection: true) { onHide?(target) }
         default:
             guard let key = event.characters, !key.isEmpty,
                   key.unicodeScalars.allSatisfy({ CharacterSet.alphanumerics.union(.punctuationCharacters)
                       .union(.symbols).union(.whitespaces).contains($0) }) else { return false }
-            if store.query.isEmpty, let position = Int(key), Shortcut.numbers.contains(position),
-               let session = store.session(in: position) {
-                onOpen?(session)
-            } else {
-                store.setQuery(store.query + key)
+            if !store.isSearching {
+                switch key.lowercased() {
+                case "/":
+                    beginSearch()
+                    return true
+                case "e", "l":
+                    if store.filter != .archive, !event.isARepeat, let target = store.removeTarget(allowSelection: true) {
+                        if key.lowercased() == "e" { onHide?(target) }
+                        else { onLater?(target) }
+                    }
+                    return true
+                default:
+                    if let position = Int(key), Shortcut.numbers.contains(position),
+                       let session = store.session(in: position) {
+                        onOpen?(session)
+                        return true
+                    }
+                }
             }
+            store.setQuery(store.query + key)
         }
         return true
     }

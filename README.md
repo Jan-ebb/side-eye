@@ -10,16 +10,19 @@ The sidebar opens in **Compact**, with one line per chat and a short summary for
 
 | Shortcut | Action |
 | --- | --- |
-| ⌃⌥Space | Open or close the sidebar. Type to find a chat by name, app, or status. |
+| ⌃⌥Space | Open or close the sidebar. |
+| / | Search the current list. |
 | ⌃⌥1–9 | Open rows 1–9 from top to bottom in the current filter and search results. |
 | ⌃⌥0 | Jump to any numbered row. Type the number, then press Return. |
 | ⌃⌥D | Switch between Compact and Briefing. Opens the sidebar if it’s closed. |
 | ⌃⌥Return | Open the next session to review. Input requests come first. |
+| E | Archive the selected chat. |
+| L | Move the selected chat to Later, or back to All from the Later list. |
 | ⌃⌥A | Archive the selected session, or the last one opened through Relay when the sidebar is closed. |
 
-Choose **All**, **Needs input**, or **To review** above the list. In the keyboard sidebar, use Tab or Shift-Tab to cycle through the filters. **Needs input** shows chats still waiting for you, including ones you’ve read. **To review** shows unread completed replies. The active filter stays selected between sidebar openings.
+Choose **All**, **Needs input**, **To review**, or **Later** above the list. Use Tab or Shift-Tab to cycle through the filters. **Needs input** shows chats still waiting for you, including ones you’ve read. **To review** shows unread completed replies. Chats in **Later** stay out of the attention count and nudges until you move them back. The active filter stays selected between sidebar openings.
 
-Use Up and Down as soon as the sidebar opens, including on hover. Return opens the highlighted chat. Use Delete to archive, ⌘Z to undo, and ⌘U to mark read or unread. Escape clears a search or closes the sidebar. Archived chats stay hidden until you undo or restore them in General settings. Add a chat URL from the menu bar icon.
+Use Up and Down as soon as the sidebar opens, including on hover. Return opens the highlighted chat. Hover over a row to see its shortcuts. Use ⌘Z to undo the last move and ⌘U to mark read or unread. Escape exits search or closes the sidebar. Choose **Show Archive** from the Relay menu bar icon to browse archived chats. Right-click a chat there to restore it. Add a chat URL from the same menu bar icon.
 
 A newly completed turn or input request produces a quiet edge nudge. The edge pill shows the number of chats that still need attention. Pending input requests count until they’re resolved or archived, even after you read them.
 

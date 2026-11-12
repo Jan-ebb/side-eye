@@ -29,6 +29,7 @@ enum OverlayMetrics {
     static let briefingViewportRows = 6
     static let compactRowHeight: CGFloat = 29
     static let compactViewportRows = 8
+    static let archiveViewportRows = 14
     static let compactSummaryBottomPadding: CGFloat = 6
     static let upNextLabel = "Up next"
     static let compactToolbarHeight: CGFloat = 38
@@ -107,8 +108,12 @@ enum OverlayMetrics {
             return headerHeight + jumpBarHeight + compactListHeight(for: min(rows.count, 18))
                 + detailHeight + jumpFooterHeight + 2
         }
+        if store.filter == .archive {
+            let header = store.isSearching ? headerHeight : compactToolbarHeight
+            return header + footerHeight + 2 + compactListHeight(for: min(rows.count, archiveViewportRows))
+        }
         if store.showsAllSummaries { return frameChrome + briefingListHeight(for: rows) }
-        let chrome = store.query.isEmpty ? compactToolbarHeight + footerHeight + 2 : frameChrome
+        let chrome = store.isSearching ? frameChrome : compactToolbarHeight + footerHeight + 2
         let listHeight = compactListHeight(for: min(rows.count, compactViewportRows))
         guard store.nextActionID != nil else { return chrome + listHeight }
         return chrome + listHeight + compactSummaryHeight(for: rows.first?.session.stateSummary, rowCount: rows.count)
@@ -287,7 +292,7 @@ private struct RowTimestamp: View {
 
     var body: some View {
         Text(label)
-            .font(.system(size: 11, weight: .medium, design: .monospaced))
+            .font(.system(size: 11, weight: .medium).monospacedDigit())
             .foregroundStyle(colors.secondary)
             .lineLimit(1)
             .accessibilityHidden(true)
@@ -312,7 +317,7 @@ private struct RowNumber: View {
 
     var body: some View {
         Text(label)
-            .font(.system(size: 11, weight: .medium, design: .monospaced))
+            .font(.system(size: 11, weight: .medium).monospacedDigit())
             .foregroundStyle(highlighted ? colors.primary : colors.secondary)
             .lineLimit(1)
             .padding(.horizontal, 4)
@@ -390,16 +395,21 @@ struct SidebarView: View {
     let hide: (Session) -> Void
     let showMenu: () -> Void
     let jump: () -> Void
+    let search: () -> Void
+    let toggleLater: (Session) -> Void
+    let restoreArchived: (Session) -> Void
     var onHighlightRow: ((String) -> Void)? = nil
     var drawsSurface = true
     var presentation = 0
 
+    @State private var hoveredRowID: String?
     @Environment(\.colorScheme) private var scheme
     @Environment(\.colorSchemeContrast) private var contrast
 
     private var colors: OverlayColors { OverlayColors(dark: scheme == .dark) }
     private var jumping: Bool { store.numberEntry != nil }
-    private var compact: Bool { !jumping && !store.showsAllSummaries }
+    private var browsingArchive: Bool { store.filter == .archive }
+    private var compact: Bool { !jumping && (browsingArchive || !store.showsAllSummaries) }
 
     var body: some View {
         TimelineView(.everyMinute) { _ in
@@ -413,14 +423,23 @@ struct SidebarView: View {
         let keyboardTarget = jumping ? entered?.id : (store.keyboardMode ? store.selectedID : nil)
         let shape = RoundedRectangle(cornerRadius: OverlayMetrics.sidebarCornerRadius, style: .continuous)
         return VStack(spacing: 0) {
-            if compact && store.query.isEmpty {
-                compactToolbar
+            if compact && !store.isSearching {
+                if browsingArchive {
+                    header
+                        .frame(height: OverlayMetrics.compactToolbarHeight)
+                        .overlay(alignment: .bottom) { hairline }
+                } else {
+                    compactToolbar
+                }
             } else {
                 header
                     .frame(height: OverlayMetrics.headerHeight)
+                    .overlay(alignment: .bottom) {
+                        if browsingArchive && !jumping { hairline }
+                    }
                 if let number = store.numberEntry {
                     jumpBar(number, rowCount: rows.count, entered: entered)
-                } else {
+                } else if !browsingArchive {
                     filters
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 9)
@@ -453,6 +472,8 @@ struct SidebarView: View {
             if drawsSurface { shape.strokeBorder(borderColor).allowsHitTesting(false) }
         }
         .clipShape(shape)
+        .onChange(of: presentation) { hoveredRowID = nil }
+        .onChange(of: store.filter) { hoveredRowID = nil }
         .foregroundStyle(colors.primary)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Relay sessions")
@@ -464,28 +485,36 @@ struct SidebarView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            if !store.query.isEmpty && !jumping {
+            if browsingArchive && !jumping {
+                headerButton("Back to All", icon: "chevron.left") {
+                    store.setQuery(nil)
+                    store.setFilter(.all)
+                }
+            }
+            if store.isSearching && !jumping {
+                let placeholder = browsingArchive ? "Search archive" : "Search sessions"
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(colors.secondary)
                     .accessibilityHidden(true)
-                Text(store.query)
+                Text(store.query.isEmpty ? placeholder : store.query)
                     .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(store.query.isEmpty ? colors.secondary : colors.primary)
                     .lineLimit(1)
-                    .accessibilityLabel("Search " + store.query)
+                    .accessibilityLabel(store.query.isEmpty ? placeholder : "Search \(store.query)")
             } else {
-                Text("Sessions")
-                    .font(.system(size: 15, weight: .semibold))
+                Text(browsingArchive ? "Archive" : "Sessions")
+                    .font(.system(size: 14, weight: .semibold))
                     .accessibilityAddTraits(.isHeader)
             }
             Spacer(minLength: 0)
-            if !jumping && !store.query.isEmpty {
-                headerButton("Clear search", icon: "xmark.circle") { store.setQuery("") }
+            if !jumping && store.isSearching {
+                headerButton("Cancel search", icon: "xmark.circle") { store.setQuery(nil) }
             }
-            if !jumping { summaryToggle }
+            if !jumping && !browsingArchive { summaryToggle }
             headerButton("Settings", icon: "ellipsis", action: showMenu)
         }
-        .padding(.horizontal, 13)
+        .padding(.horizontal, browsingArchive && !store.isSearching && !jumping ? 9 : 13)
     }
 
     private var compactToolbar: some View {
@@ -526,7 +555,7 @@ struct SidebarView: View {
 
     private var filters: some View {
         HStack(spacing: 4) {
-            ForEach(SessionFilter.allCases, id: \.self) { filter in
+            ForEach(SessionFilter.tabs, id: \.self) { filter in
                 let selected = filter == store.filter
                 let count = store.count(for: filter)
                 Button { store.setFilter(filter) } label: {
@@ -536,7 +565,7 @@ struct SidebarView: View {
                             .foregroundStyle(selected ? colors.accent : colors.body)
                         if !compact || (filter != .all && count > 0) {
                             Text(String(count))
-                                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                .font(.system(size: 11, weight: .medium).monospacedDigit())
                                 .foregroundStyle(filterCountColor(filter, count: count))
                         }
                     }
@@ -556,7 +585,7 @@ struct SidebarView: View {
     private func filterCountColor(_ filter: SessionFilter, count: Int) -> Color {
         if count == 0 { return colors.secondary }
         switch filter {
-        case .all: return colors.secondary
+        case .all, .later, .archive: return colors.secondary
         case .needsInput: return colors.input
         case .toReview: return colors.review
         }
@@ -591,17 +620,18 @@ struct SidebarView: View {
                 LazyVStack(spacing: compactRows ? 1 : 0) {
                     ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                         let isMain = row.session.source == .grok && store.mainGrokIDs.contains(row.id)
+                        let hasActionShortcuts = !browsingArchive && !jumping && !store.isSearching
+                            && store.selectedID == row.id
                         SidebarRow(row: row, position: index + 1, compact: compactRows, jumping: jumping,
                                    keyboardMode: store.keyboardMode,
                                    keyboardSelected: keyboardTarget == row.id,
                                    pointerSelected: compact && !store.keyboardMode && store.selectedID == row.id,
                                    isNext: nextID == row.id, isLatest: latestID == row.id,
                                    isMain: isMain, colors: colors, now: now, numberWidth: numberWidth,
+                                   hovered: hoveredRowID == row.id,
+                                   actionHelp: hasActionShortcuts ? "E Archive · L \(laterActionLabel)" : nil,
                                    activate: { open(row.session) },
-                                   highlight: {
-                                       if let onHighlightRow { onHighlightRow(row.id) }
-                                       else if !store.keyboardMode { store.selectedID = row.id }
-                                   })
+                                   hover: { hoverRow(row.id, entered: $0) })
                         .contextMenu { rowMenu(row, isMain: isMain) }
                         .id(row.id)
                     }
@@ -626,21 +656,41 @@ struct SidebarView: View {
         }
     }
 
+    private func hoverRow(_ id: String, entered: Bool) {
+        if entered {
+            hoveredRowID = id
+            if let onHighlightRow { onHighlightRow(id) }
+            else if !store.keyboardMode { store.selectedID = id }
+        } else if hoveredRowID == id {
+            hoveredRowID = nil
+        }
+    }
+
+    private var laterActionLabel: String { store.filter == .later ? "Move back" : "Later" }
+
     @ViewBuilder
     private func rowMenu(_ row: SessionRow, isMain: Bool) -> some View {
         Button("Open", systemImage: "arrow.up.forward") { open(row.session) }
-        Button(row.needsReview ? "Mark as read" : "Mark as unread",
-               systemImage: row.needsReview ? "checkmark.circle" : "circlebadge") {
-            if row.needsReview { store.markRead(row.session) }
-            else { store.markUnread(row.session) }
-        }
-        if row.session.source == .grok {
-            Button(isMain ? "Remove from main agents" : "Mark as main agent",
-                   systemImage: isMain ? "star.slash" : "star") {
-                store.toggleGrokMain(id: row.id)
+        if browsingArchive {
+            Button("Restore", systemImage: "arrow.uturn.backward") { restoreArchived(row.session) }
+        } else {
+            Button(row.needsReview ? "Mark as read" : "Mark as unread",
+                   systemImage: row.needsReview ? "checkmark.circle" : "circlebadge") {
+                if row.needsReview { store.markRead(row.session) }
+                else { store.markUnread(row.session) }
             }
+            if row.session.source == .grok {
+                Button(isMain ? "Remove from main agents" : "Mark as main agent",
+                       systemImage: isMain ? "star.slash" : "star") {
+                    store.toggleGrokMain(id: row.id)
+                }
+            }
+            Button(store.filter == .later ? "Move back" : "Move to Later",
+                   systemImage: store.filter == .later ? "arrow.uturn.backward" : "clock") {
+                toggleLater(row.session)
+            }
+            Button("Archive session", systemImage: "archivebox") { hide(row.session) }
         }
-        Button("Archive session", systemImage: "archivebox") { hide(row.session) }
     }
 
     private func jumpDetail(_ row: SessionRow, now: Date) -> some View {
@@ -692,12 +742,15 @@ struct SidebarView: View {
         case .all: return "No active sessions"
         case .needsInput: return "Nothing needs input"
         case .toReview: return "Nothing to review"
+        case .later: return "Nothing saved for later"
+        case .archive: return store.missingArchiveCount > 0 ? "No archived chats available" : "No archived chats"
         }
     }
 
     private var emptyDescription: String? {
         if store.isLoading { return nil }
         if !store.query.isEmpty {
+            if browsingArchive { return "Clear search to see the full archive." }
             return store.filter == .all ? "Clear search to see all sessions." : "Try a different search or filter."
         }
         switch store.filter {
@@ -707,6 +760,11 @@ struct SidebarView: View {
                 : "Open a chat to see it here."
         case .needsInput: return "Questions and approvals will appear here."
         case .toReview: return "Unread updates will appear here."
+        case .later: return "Press L on a chat to save it for later."
+        case .archive:
+            return store.missingArchiveCount > 0
+                ? "Older archived chats appear when Relay finds them again."
+                : "Chats you archive appear here."
         }
     }
 
@@ -729,22 +787,21 @@ struct SidebarView: View {
             } else {
                 if let notice = store.notice {
                     Text(notice).accessibilityAddTraits(.updatesFrequently)
+                } else if !browsingArchive, !store.isSearching, let hoveredRowID, hoveredRowID == store.selectedID,
+                          rows.contains(where: { $0.id == hoveredRowID }) {
+                    hint("E", "Archive")
+                    hint("L", laterActionLabel)
                 }
                 Spacer(minLength: 0)
-                if !rows.isEmpty {
-                    Button(action: jump) {
-                        HStack(spacing: 5) {
-                            Text("Jump").fontWeight(.medium)
-                            Text("⌃⌥0").font(.system(size: 11, weight: .medium, design: .monospaced))
-                        }
-                        .fixedSize()
-                        .padding(.horizontal, 4)
-                        .frame(height: 24)
-                        .contentShape(Rectangle())
+                if store.isSearching {
+                    hint("Esc", "Cancel")
+                } else {
+                    footerButton("Search", key: "/", accessibilityLabel: browsingArchive ? "Search archive" : "Search sessions",
+                                 accessibilityShortcut: "Slash", action: search)
+                    if !rows.isEmpty {
+                        footerButton("Jump", key: "⌃⌥0", accessibilityLabel: "Jump to row",
+                                     accessibilityShortcut: "Control Option 0", action: jump)
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Jump to row")
-                    .accessibilityHint("Control Option 0")
                 }
             }
         }
@@ -755,9 +812,26 @@ struct SidebarView: View {
         .padding(.horizontal, 12)
     }
 
+    private func footerButton(_ label: String, key: String, accessibilityLabel: String,
+                              accessibilityShortcut: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Text(label).fontWeight(.medium)
+                Text(key).fontWeight(.medium)
+            }
+            .fixedSize()
+            .padding(.horizontal, 4)
+            .frame(height: 24)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityHint(accessibilityShortcut)
+    }
+
     private func hint(_ keys: String, _ label: String) -> some View {
         HStack(spacing: 5) {
-            Text(keys).font(.system(size: 11, weight: .medium, design: .monospaced))
+            Text(keys).font(.system(size: 11, weight: .semibold))
             Text(label).font(.system(size: 11, weight: .medium))
         }
         .foregroundStyle(colors.secondary)
@@ -783,10 +857,11 @@ private struct SidebarRow: View {
     let colors: OverlayColors
     let now: Date
     let numberWidth: CGFloat
+    let hovered: Bool
+    let actionHelp: String?
     let activate: () -> Void
-    let highlight: () -> Void
+    let hover: (Bool) -> Void
 
-    @State private var hovered = false
     @Environment(\.colorSchemeContrast) private var contrast
 
     private var session: Session { row.session }
@@ -844,12 +919,9 @@ private struct SidebarRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .onHover { isInside in
-            hovered = isInside
-            if isInside { highlight() }
-        }
+        .onHover(perform: hover)
         .help([session.title, session.source.name, session.detail, isMain ? "Main Grok agent" : nil, row.stateTitle,
-               cueDescription, row.stateDescription, row.timestampDescription, session.stateSummary, keyHelp,
+               cueDescription, row.stateDescription, row.timestampDescription, session.stateSummary, keyHelp, actionHelp,
                keyboardSelected && !jumping ? (row.needsReview ? "⌘U Mark read" : "⌘U Mark unread") : nil]
             .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n"))
         .accessibilityLabel(session.title)
@@ -940,12 +1012,12 @@ private struct SidebarRow: View {
                 .frame(width: OverlayMetrics.sourceIconSize, height: OverlayMetrics.sourceIconSize)
                 .accessibilityHidden(true)
             Text(session.title)
-                .font(.system(size: jumping ? 13 : 14, weight: compact && !compactUpNext ? .medium : .semibold))
+                .font(.system(size: 14, weight: compact && !compactUpNext ? .medium : .semibold))
                 .lineLimit(1)
                 .truncationMode(.tail)
             if isMain && !isCompactList {
                 Text("Main")
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(colors.secondary)
                     .padding(.horizontal, 4)
                     .frame(height: 15)
@@ -956,7 +1028,7 @@ private struct SidebarRow: View {
             if let cue {
                 let tint = isNext ? row.visualState.tint(colors) : colors.secondary
                 Text(cue)
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(tint)
                     .padding(.horizontal, 4)
                     .frame(height: 15)
@@ -1110,7 +1182,7 @@ struct NudgeView: View {
                     Spacer(minLength: 0)
                     if additional > 0 {
                         Text("+\(additional)")
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .font(.system(size: 11, weight: .medium).monospacedDigit())
                             .foregroundStyle(colors.secondary)
                     }
                     if session != nil {

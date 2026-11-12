@@ -2,13 +2,17 @@ import Foundation
 import Combine
 
 enum SessionFilter: CaseIterable, Hashable {
-    case all, needsInput, toReview
+    case all, needsInput, toReview, later, archive
+
+    static let tabs: [SessionFilter] = [.all, .needsInput, .toReview, .later]
 
     var label: String {
         switch self {
         case .all: "All"
         case .needsInput: "Needs input"
         case .toReview: "To review"
+        case .later: "Later"
+        case .archive: "Archive"
         }
     }
 
@@ -17,6 +21,7 @@ enum SessionFilter: CaseIterable, Hashable {
         case .all: true
         case .needsInput: row.session.status == .needsInput
         case .toReview: row.session.status == .ready && row.needsReview
+        case .later, .archive: false
         }
     }
 }
@@ -27,12 +32,14 @@ final class SessionStore: ObservableObject {
     private static let briefingPreferenceKey = "sidebarUsesBriefing"
     private static let staleAge: TimeInterval = 8 * 60 * 60
     @Published private(set) var rows: [SessionRow] = []
+    @Published private var laterRows: [SessionRow] = []
+    @Published private var archiveRows: [SessionRow] = []
     @Published private(set) var hiddenCount = 0
     @Published private(set) var isLoading = true
     @Published var keyboardMode = false
     @Published var selectedID: String?
     @Published var notice: String?
-    @Published private(set) var query = ""
+    @Published private var searchQuery: String?
     @Published private(set) var filter: SessionFilter = .all
     @Published private(set) var showsAllSummaries: Bool
     @Published private(set) var showsAutomationRuns: Bool
@@ -43,13 +50,20 @@ final class SessionStore: ObservableObject {
 
     var onAttention: (([Session]) -> Void)?
     var onRowsChanged: (() -> Void)?
-    var attentionCount: Int { rows.lazy.filter(Self.needsAction).count }
+    var query: String { searchQuery ?? "" }
+    var isSearching: Bool { searchQuery != nil }
+    var missingArchiveCount: Int { max(0, hiddenCount - archiveRows.count) }
+    private var activeRows: [SessionRow] { laterRows.isEmpty ? rows : rows.filter { !isDeferred($0.id) } }
+    var attentionCount: Int { activeRows.lazy.filter(Self.needsAction).count }
     func count(for filter: SessionFilter) -> Int {
-        filter == .all ? rows.count : rows.lazy.filter(filter.includes).count
+        if filter == .later { return laterRows.count }
+        if filter == .archive { return archiveRows.count }
+        return activeRows.lazy.filter(filter.includes).count
     }
 
     var shownRows: [SessionRow] {
         var visible = matchingRows
+        guard filter != .later, filter != .archive else { return visible }
         let nextAction = visible.indices.lazy.filter { Self.needsAction(visible[$0]) }.min { lhs, rhs in
             Self.actionFirst(visible[lhs], visible[rhs])
         }
@@ -61,7 +75,13 @@ final class SessionStore: ObservableObject {
     }
 
     private var matchingRows: [SessionRow] {
-        let scoped = filter == .all ? rows : rows.filter(filter.includes)
+        let scoped: [SessionRow]
+        switch filter {
+        case .all: scoped = activeRows
+        case .needsInput, .toReview: scoped = activeRows.filter(filter.includes)
+        case .later: scoped = laterRows
+        case .archive: scoped = archiveRows
+        }
         let terms = query.split(whereSeparator: \.isWhitespace)
         if terms.isEmpty { return scoped }
         return scoped.filter { row in
@@ -73,7 +93,8 @@ final class SessionStore: ObservableObject {
     }
 
     var nextActionID: String? {
-        guard let first = shownRows.first, Self.needsAction(first) else { return nil }
+        guard filter != .later, filter != .archive,
+              let first = shownRows.first, Self.needsAction(first) else { return nil }
         return first.id
     }
 
@@ -107,20 +128,25 @@ final class SessionStore: ObservableObject {
         rebuild()
     }
 
-    func setQuery(_ value: String) {
-        let nextQuery = String(value.prefix(80))
-        let changed = nextQuery != query
-        if changed { query = nextQuery }
+    func setQuery(_ value: String?) {
+        let nextQuery = value.map { String($0.prefix(80)) }
+        let changed = nextQuery != searchQuery
+        if changed { searchQuery = nextQuery }
         syncSelection(resetNumber: changed)
         if changed { onRowsChanged?() }
     }
 
-    var workingCount: Int { rows.filter { $0.session.status == .working }.count }
+    var workingCount: Int { activeRows.lazy.filter { $0.session.status == .working }.count }
 
     private struct Receipt: Codable, Equatable {
         var status: SessionStatus
         var activityID: String?
         var seenAt: Date
+    }
+
+    private struct SavedSession: Codable, Equatable {
+        let snapshot: Session
+        let deferredAt: Date?
     }
 
     private struct History: Codable, Equatable {
@@ -130,12 +156,18 @@ final class SessionStore: ObservableObject {
         var lastOpened: String?
         var completions: [String: Date]?
         var manuallyUnread: Set<String>?
+        var savedSessions: [String: SavedSession]?
+    }
+
+    private enum LastChange {
+        case archive(String)
+        case later(String, previous: SavedSession?)
     }
 
     private let defaults: UserDefaults?
     private var history = History()
     private var latest: [String: Session] = [:]
-    private var lastDismissed: String?
+    private var lastChange: LastChange?
     private var missingOnce = Set<String>()
 
     init(defaults: UserDefaults? = .standard) {
@@ -152,6 +184,7 @@ final class SessionStore: ObservableObject {
         history.seen = history.seen.filter { $0.value.seenAt >= expiry }
         history.completions = history.completions?.filter { $0.value >= expiry }
         hiddenCount = history.dismissed.count
+        if history.savedSessions != nil { rebuild() }
     }
 
     func ingest(_ sessions: [Session], now: Date = Date()) {
@@ -185,12 +218,18 @@ final class SessionStore: ObservableObject {
             }
             let isNew = before == nil && session.updatedAt >= now.addingTimeInterval(-12)
             if !isLoading, (signalChanged || isNew),
-               shouldReview(session, includingManual: false) {
+               isAttentionPending(for: session) {
                 attention.append(session)
             }
         }
 
         history.completions = completions.isEmpty ? nil : completions
+        for id in history.dismissed.keys where history.savedSessions?[id] == nil {
+            if let session = combined[id] {
+                saveSession(SavedSession(snapshot: Self.snapshot(of: session), deferredAt: nil), id: id)
+            }
+        }
+        pruneRecoveredSnapshots(in: combined)
         latest = combined
         if isLoading { isLoading = false }
         rebuild(now: now)
@@ -213,7 +252,7 @@ final class SessionStore: ObservableObject {
     }
 
     func isAttentionPending(for session: Session) -> Bool {
-        shouldReview(session, includingManual: false)
+        isVisible(session) && !isDeferred(session.id) && shouldReview(session, includingManual: false)
     }
 
     func acknowledge(_ session: Session) {
@@ -250,11 +289,15 @@ final class SessionStore: ObservableObject {
     }
 
     func nextAttention() -> Session? {
-        rows.filter(\.needsReview).map(\.session).sorted(by: Self.attentionFirst).first
+        activeRows.filter(\.needsReview).map(\.session).sorted(by: Self.attentionFirst).first
     }
 
     func session(in position: Int) -> Session? {
         session(in: position, among: shownRows)
+    }
+
+    func session(id: String) -> Session? {
+        rows.first { $0.id == id }?.session ?? archiveRows.first { $0.id == id }?.session
     }
 
     private func session(in position: Int, among visible: [SessionRow]) -> Session? {
@@ -302,27 +345,103 @@ final class SessionStore: ObservableObject {
     }
 
     func removeTarget(allowSelection: Bool) -> Session? {
-        let id = allowSelection ? selectedID : history.lastOpened
-        return rows.first { $0.id == id }?.session
+        if allowSelection {
+            guard filter != .archive else { return nil }
+            return shownRows.first { $0.id == selectedID }?.session
+        }
+        return rows.first { $0.id == history.lastOpened }?.session
     }
 
     func hide(_ session: Session) {
-        let index = shownRows.firstIndex { $0.id == session.id }
-        history.dismissed[session.id] = Date()
-        lastDismissed = session.id
+        guard let current = rows.first(where: { $0.id == session.id })?.session else { return }
+        let index = shownRows.firstIndex { $0.id == current.id }
+        let deferredAt = history.savedSessions?[current.id]?.deferredAt
+        saveSession(SavedSession(snapshot: Self.snapshot(of: current), deferredAt: deferredAt), id: current.id)
+        history.dismissed[current.id] = Date()
+        lastChange = .archive(current.id)
         rebuild()
+        selectRow(afterRemoving: index)
+        persist()
+    }
+
+    @discardableResult
+    func restoreArchived(_ session: Session) -> Bool {
+        guard history.dismissed.removeValue(forKey: session.id) != nil else { return false }
+        let index = shownRows.firstIndex { $0.id == session.id }
+        if case .archive(let id) = lastChange, id == session.id { lastChange = nil }
+        pruneRecoveredSnapshots(in: latest)
+        rebuild()
+        selectRow(afterRemoving: index)
+        persist()
+        return true
+    }
+
+    @discardableResult
+    func toggleLater(_ session: Session) -> Bool? {
+        guard let current = rows.first(where: { $0.id == session.id })?.session else { return nil }
+        let index = shownRows.firstIndex { $0.id == current.id }
+        let previous = history.savedSessions?[current.id]
+        let deferSession = previous?.deferredAt == nil
+        if deferSession {
+            saveSession(SavedSession(snapshot: Self.snapshot(of: current), deferredAt: Date()), id: current.id)
+        } else if latest[current.id] == nil, let previous {
+            saveSession(SavedSession(snapshot: previous.snapshot, deferredAt: nil), id: current.id)
+        } else {
+            saveSession(nil, id: current.id)
+        }
+        lastChange = .later(current.id, previous: previous)
+        rebuild()
+        selectRow(afterRemoving: index)
+        persist()
+        return deferSession
+    }
+
+    private func selectRow(afterRemoving index: Int?) {
         let visible = shownRows
         if let index, !visible.isEmpty, (numberEntry ?? "").isEmpty {
             selectedID = visible[min(index, visible.count - 1)].id
         }
-        persist()
+    }
+
+    private func saveSession(_ saved: SavedSession?, id: String) {
+        var sessions = history.savedSessions ?? [:]
+        sessions[id] = saved
+        history.savedSessions = sessions.isEmpty ? nil : sessions
+    }
+
+    private static func snapshot(of session: Session) -> Session {
+        // A saved route can outlive its source scan, but its reported state cannot.
+        Session(id: session.id, source: session.source, title: session.title, detail: session.detail,
+                status: .unknown, updatedAt: session.updatedAt, route: session.route,
+                completedAt: session.completedAt, isAutomationRun: session.isAutomationRun)
+    }
+
+    private func pruneRecoveredSnapshots(in current: [String: Session]) {
+        guard let saved = history.savedSessions else { return }
+        let remaining = saved.filter { id, entry in
+            entry.deferredAt != nil || history.dismissed[id] != nil || current[id] == nil
+        }
+        history.savedSessions = remaining.isEmpty ? nil : remaining
+    }
+
+    private func isDeferred(_ id: String) -> Bool {
+        history.savedSessions?[id]?.deferredAt != nil
     }
 
     func undoHide() -> Bool {
-        guard let lastDismissed, history.dismissed.removeValue(forKey: lastDismissed) != nil else {
-            return false
+        guard let lastChange else { return false }
+        self.lastChange = nil
+        switch lastChange {
+        case .archive(let id):
+            guard history.dismissed.removeValue(forKey: id) != nil else { return false }
+            pruneRecoveredSnapshots(in: latest)
+        case .later(let id, let previous):
+            if previous == nil, latest[id] == nil, let saved = history.savedSessions?[id] {
+                saveSession(SavedSession(snapshot: saved.snapshot, deferredAt: nil), id: id)
+            } else {
+                saveSession(previous, id: id)
+            }
         }
-        self.lastDismissed = nil
         rebuild()
         persist()
         return true
@@ -330,6 +449,8 @@ final class SessionStore: ObservableObject {
 
     func restoreHidden() {
         history.dismissed.removeAll()
+        if case .archive = lastChange { lastChange = nil }
+        pruneRecoveredSnapshots(in: latest)
         rebuild()
         persist()
     }
@@ -339,6 +460,7 @@ final class SessionStore: ObservableObject {
             history.dismissed.removeValue(forKey: existing.id)
             history.links.removeAll { $0.id == existing.id }
             latest.removeValue(forKey: existing.id)
+            saveSession(nil, id: existing.id)
         }
         let session = Session(id: "link:" + UUID().uuidString, source: source, title: title,
                               detail: "Pinned link", status: .unknown, updatedAt: Date(),
@@ -360,20 +482,42 @@ final class SessionStore: ObservableObject {
         if availableGrokSessions != grokAgents { availableGrokSessions = grokAgents }
 
         let staleBefore = now.addingTimeInterval(-Self.staleAge)
-        let result = latest.values.filter { isVisible($0) }.sorted(by: Self.completionFirst).map { session in
-            let needsReview = shouldReview(session)
-            let lastActivity = max(session.updatedAt, session.completedAt ?? .distantPast)
-            return SessionRow(session: session, needsReview: needsReview,
-                              isManuallyUnread: history.manuallyUnread?.contains(session.id) == true,
-                              isStale: session.status == .idle && !needsReview &&
-                                lastActivity > .distantPast && lastActivity <= staleBefore)
+        let snapshots = history.savedSessions?.values.compactMap { saved in
+            latest[saved.snapshot.id] == nil ? saved.snapshot : nil
+        } ?? []
+        let sessions = Array(latest.values) + snapshots
+        let result = sessions.filter { isVisible($0) }.sorted(by: Self.completionFirst)
+            .map { makeRow($0, staleBefore: staleBefore) }
+        let deferred = result.compactMap { row -> (SessionRow, Date)? in
+            guard let date = history.savedSessions?[row.id]?.deferredAt else { return nil }
+            return (row, date)
+        }.sorted { lhs, rhs in
+            if lhs.1 != rhs.1 { return lhs.1 > rhs.1 }
+            return lhs.0.id < rhs.0.id
+        }.map(\.0)
+        let archived = history.dismissed.sorted { lhs, rhs in
+            if lhs.value != rhs.value { return lhs.value > rhs.value }
+            return lhs.key < rhs.key
+        }.compactMap { id, _ in
+            (latest[id] ?? history.savedSessions?[id]?.snapshot).map { makeRow($0, staleBefore: staleBefore) }
         }
         if hiddenCount != history.dismissed.count { hiddenCount = history.dismissed.count }
-        if rows != result {
-            rows = result
+        if rows != result || laterRows != deferred || archiveRows != archived {
+            if rows != result { rows = result }
+            if laterRows != deferred { laterRows = deferred }
+            if archiveRows != archived { archiveRows = archived }
             syncSelection()
             onRowsChanged?()
         }
+    }
+
+    private func makeRow(_ session: Session, staleBefore: Date) -> SessionRow {
+        let needsReview = shouldReview(session)
+        let lastActivity = max(session.updatedAt, session.completedAt ?? .distantPast)
+        return SessionRow(session: session, needsReview: needsReview,
+                          isManuallyUnread: history.manuallyUnread?.contains(session.id) == true,
+                          isStale: session.status == .idle && !needsReview &&
+                            lastActivity > .distantPast && lastActivity <= staleBefore)
     }
 
     private func syncSelection(resetNumber: Bool = false) {
@@ -397,7 +541,6 @@ final class SessionStore: ObservableObject {
     }
 
     private func shouldReview(_ session: Session, includingManual: Bool = true) -> Bool {
-        guard isVisible(session) else { return false }
         if includingManual && history.manuallyUnread?.contains(session.id) == true { return true }
         guard session.status.requestsAttention else { return false }
         if session.status == .ready && session.reviewedBySource == true { return false }
