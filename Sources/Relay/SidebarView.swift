@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum OverlayMetrics {
-    static let width: CGFloat = 380
+    static let width: CGFloat = 402
     static let sidebarCornerRadius: CGFloat = 12
     static let railSize = NSSize(width: 38, height: 50)
     static let railPillRightInset: CGFloat = 8
@@ -25,7 +25,7 @@ enum OverlayMetrics {
     static let rowMetadataHeight: CGFloat = 15
     static let briefingLineGap: CGFloat = 2
     static let briefingViewportRows = 6
-    static let compactRowHeight: CGFloat = 27
+    static let compactRowHeight: CGFloat = 29
     static let compactViewportRows = 8
     static let compactSummaryBottomPadding: CGFloat = 6
     static let upNextLabel = "Up next"
@@ -116,16 +116,17 @@ enum OverlayMetrics {
 struct OverlayColors {
     let dark: Bool
 
-    var surface: Color { color(0x1D1D1F, 0xFAF9F8) }
-    var primary: Color { color(0xF1F0EF, 0x222224) }
-    var body: Color { color(0xCAC8C9, 0x444448) }
-    var secondary: Color { color(0xA7A5AA, 0x5D5C62) }
-    var divider: Color { color(0x343437, 0xDEDCDB) }
-    var selection: Color { color(0x2B2B30, 0xEAE9ED) }
-    var inset: Color { color(0x242426, 0xF1F0EF) }
-    var input: Color { color(0xE6B571, 0x81500F) }
-    var review: Color { color(0x89D1A9, 0x266147) }
-    var working: Color { color(0x8CB7EF, 0x2F5987) }
+    var surface: Color { color(0x1D1D1F, 0xFCFCFB) }
+    var primary: Color { color(0xF1F0EF, 0x232530) }
+    var body: Color { color(0xCAC8C9, 0x444858) }
+    var secondary: Color { color(0xA7A5AA, 0x606577) }
+    var divider: Color { color(0x343437, 0xE4E5EA) }
+    var selection: Color { color(0x2B2B30, 0xEDF0FC) }
+    var accent: Color { color(0xADB6FB, 0x464EA8) }
+    var inset: Color { color(0x242426, 0xF4F4F3) }
+    var input: Color { color(0xE6B571, 0x855014) }
+    var review: Color { color(0x89D1A9, 0x236248) }
+    var working: Color { color(0x8CB7EF, 0x2F5895) }
 
     private func color(_ darkHex: UInt32, _ lightHex: UInt32) -> Color {
         let hex = dark ? darkHex : lightHex
@@ -487,8 +488,8 @@ struct SidebarView: View {
                 Button { store.setFilter(filter) } label: {
                     HStack(spacing: 5) {
                         Text(filter.label)
-                            .font(.system(size: 11, weight: selected ? .semibold : .medium))
-                            .foregroundStyle(selected ? colors.primary : colors.body)
+                            .font(.system(size: 12, weight: selected ? .semibold : .medium))
+                            .foregroundStyle(selected ? colors.accent : colors.body)
                         if !compact || (filter != .all && count > 0) {
                             Text(String(count))
                                 .font(.system(size: 11, weight: .medium, design: .monospaced))
@@ -897,7 +898,7 @@ private struct SidebarRow: View {
     private func title(compact: Bool) -> some View {
         HStack(spacing: 5) {
             Text(session.title)
-                .font(.system(size: compact ? 13 : 14, weight: compact && !compactUpNext ? .medium : .semibold))
+                .font(.system(size: jumping ? 13 : 14, weight: compact && !compactUpNext ? .medium : .semibold))
                 .lineLimit(1)
                 .truncationMode(.tail)
             if isMain && !isCompactList {
