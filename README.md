@@ -4,21 +4,21 @@ Relay is a native macOS menu bar app for keeping parallel agent conversations wi
 
 Drag the edge pill up or down to dock it at a different height. Relay saves its position on each display. Hover to grow the pill into the sidebar, and move away to shrink it back. Relay uses native Force Touch feedback on reveal and after a drag settles. Its animations follow the system Reduce Motion setting.
 
-The sidebar opens in **Compact**, with one line per chat and a short summary for **Up next** when available. Press **⌃⌥D** or use the layout button to switch to **Briefing**, which shows a summary on each row. Relay remembers the layout you choose.
+The sidebar opens in **Compact**, with one line per chat and a short summary for **Up next** when available. Press **D** or use the layout button to switch to **Briefing**, which shows a summary on each row. Relay remembers the layout you choose.
 
 ## Switching
 
 | Shortcut | Action |
 | --- | --- |
-| ⌃⌥Space | Open or close the sidebar. |
+| ⌃⌥Space | Open or close the sidebar from any app. |
 | / | Search the current list. |
-| ⌃⌥1–9 | Open rows 1–9 from top to bottom in the current filter and search results. |
-| ⌃⌥0 | Jump to any numbered row. Type the number, then press Return. |
-| ⌃⌥D | Switch between Compact and Briefing. Opens the sidebar if it’s closed. |
-| ⌃⌥Return | Open the next session to review. Input requests come first. |
+| 1–9 | Open rows 1–9 from top to bottom. |
+| 0 | Jump to any numbered row. Type the number, then press Return. |
+| D | Switch between Compact and Briefing. |
 | E | Archive the selected chat. |
 | L | Move the selected chat to Later, or back to All from the Later list. |
-| ⌃⌥A | Archive the selected session, or the last one opened through Relay when the sidebar is closed. |
+
+Single keys act on the list when Relay is open. While searching, they type into the query. See **Settings → Shortcuts** for shortcuts that work from other apps.
 
 Choose **All**, **Needs input**, **To review**, or **Later** above the list. Use Tab or Shift-Tab to cycle through the filters. **Needs input** shows chats still waiting for you, including ones you’ve read. **To review** shows unread completed replies. Chats in **Later** stay out of the attention count and nudges until you move them back. The active filter stays selected between sidebar openings.
 

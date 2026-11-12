@@ -12,6 +12,7 @@ struct PreferencesView: View {
     @ObservedObject var store: SessionStore
     @State private var showsOptionalSources = false
     @State private var showsStatusGuide = false
+    @State private var showsMoreGlobalShortcuts = false
 
     static let windowSize = CGSize(width: 520, height: 500)
 
@@ -211,35 +212,50 @@ struct PreferencesView: View {
 
     private var shortcuts: some View {
         Group {
-            SettingsGroup(title: "Anywhere") {
-                shortcutRow("Show or hide sessions", key: "⌃⌥Space", shortcut: .overlay)
-                SettingsDivider()
-                shortcutRow("Open rows 1 through 9", detail: unavailableRowShortcuts, key: "⌃⌥1…9")
-                SettingsDivider()
-                shortcutRow("Jump by row number", detail: "Type a row number, then press Return.",
-                            key: "⌃⌥0", shortcut: .jumpNumber)
-                SettingsDivider()
-                shortcutRow("Switch between line and detail views", key: "⌃⌥D", shortcut: .details)
-                SettingsDivider()
-                shortcutRow("Review the next session", key: "⌃⌥Return", shortcut: .next)
-                SettingsDivider()
-                shortcutRow("Archive a session", key: "⌃⌥A", shortcut: .archive)
+            SettingsGroup(title: "From any app") {
+                shortcutRow("Show or hide Relay", key: "⌃⌥Space", shortcut: .overlay)
             }
-            SettingsGroup(title: "In the sidebar") {
-                shortcutRow("Find a session", key: "Type to search")
+            SettingsGroup(title: "When Relay is open") {
+                shortcutRow("Open rows 1 through 9", key: "1–9")
+                SettingsDivider()
+                shortcutRow("Jump to a row", detail: "Type a row number, then press Return.", key: "0")
+                SettingsDivider()
+                shortcutRow("Switch between Compact and Briefing", key: "D")
+                SettingsDivider()
+                shortcutRow("Archive the selected chat", key: "E")
+                SettingsDivider()
+                shortcutRow("Move to or from Later", key: "L")
+                SettingsDivider()
+                shortcutRow("Search chats", key: "/")
                 SettingsDivider()
                 shortcutRow("Move selection", key: "↑  ↓")
                 SettingsDivider()
-                shortcutRow("Open selected session", key: "Return")
+                shortcutRow("Open the selected chat", key: "Return")
                 SettingsDivider()
                 shortcutRow("Mark read or unread", key: "⌘U")
                 SettingsDivider()
-                shortcutRow("Archive selected session", key: "Delete")
+                shortcutRow("Undo the last move", key: "⌘Z")
                 SettingsDivider()
-                shortcutRow("Undo archive", key: "⌘Z")
-                SettingsDivider()
-                shortcutRow("Clear search or close", key: "Esc")
+                shortcutRow("Exit search or close Relay", key: "Esc")
             }
+            DisclosureGroup(isExpanded: $showsMoreGlobalShortcuts) {
+                SettingsGroup(title: "Global shortcuts") {
+                    shortcutRow("Open rows 1 through 9", detail: unavailableRowShortcuts, key: "⌃⌥1…9")
+                    SettingsDivider()
+                    shortcutRow("Jump to a row", key: "⌃⌥0", shortcut: .jumpNumber)
+                    SettingsDivider()
+                    shortcutRow("Switch between Compact and Briefing", key: "⌃⌥D", shortcut: .details)
+                    SettingsDivider()
+                    shortcutRow("Review the next chat", key: "⌃⌥Return", shortcut: .next)
+                    SettingsDivider()
+                    shortcutRow("Archive a chat", key: "⌃⌥A", shortcut: .archive)
+                }
+                .padding(.top, 10)
+            } label: {
+                Text("More shortcuts from any app")
+                    .font(.system(size: 12, weight: .medium))
+            }
+            .padding(.horizontal, 2)
         }
     }
 

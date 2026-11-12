@@ -533,10 +533,10 @@ struct SidebarView: View {
         let expanded = store.showsAllSummaries
         let title = expanded ? "Show compact list" : "Show Briefing"
         return headerButton(title, icon: expanded ? "list.bullet" : "list.bullet.rectangle",
-                            help: "\(title) (⌃⌥D)") {
+                            help: store.isSearching ? title : "\(title) (D)") {
             store.setShowsAllSummaries(!expanded)
         }
-        .accessibilityHint("Control Option D")
+        .accessibilityHint(store.isSearching ? "" : "Press D")
     }
 
     private func headerButton(_ title: String, icon: String, help: String? = nil,
@@ -623,6 +623,7 @@ struct SidebarView: View {
                         let hasActionShortcuts = !browsingArchive && !jumping && !store.isSearching
                             && store.selectedID == row.id
                         SidebarRow(row: row, position: index + 1, compact: compactRows, jumping: jumping,
+                                   searching: store.isSearching,
                                    keyboardMode: store.keyboardMode,
                                    keyboardSelected: keyboardTarget == row.id,
                                    pointerSelected: compact && !store.keyboardMode && store.selectedID == row.id,
@@ -799,8 +800,8 @@ struct SidebarView: View {
                     footerButton("Search", key: "/", accessibilityLabel: browsingArchive ? "Search archive" : "Search sessions",
                                  accessibilityShortcut: "Slash", action: search)
                     if !rows.isEmpty {
-                        footerButton("Jump", key: "⌃⌥0", accessibilityLabel: "Jump to row",
-                                     accessibilityShortcut: "Control Option 0", action: jump)
+                        footerButton("Jump", key: "0", accessibilityLabel: "Jump to row",
+                                     accessibilityShortcut: "Press 0", action: jump)
                     }
                 }
             }
@@ -848,6 +849,7 @@ private struct SidebarRow: View {
     let position: Int
     let compact: Bool
     let jumping: Bool
+    let searching: Bool
     let keyboardMode: Bool
     let keyboardSelected: Bool
     let pointerSelected: Bool
@@ -881,9 +883,14 @@ private struct SidebarRow: View {
         return isLatest ? "Latest reply" : nil
     }
 
-    private var keyHelp: String {
-        if jumping || !directShortcut { return "⌃⌥0, \(position), Return" }
-        return "⌃⌥\(position)"
+    private var numberShortcut: String {
+        directShortcut ? String(position) : "0, \(position), Return"
+    }
+
+    private var keyHelp: String? {
+        if jumping { return "Enter \(position), then Return" }
+        if searching { return keyboardSelected ? "Return to open" : nil }
+        return numberShortcut
     }
 
     var body: some View {
@@ -928,7 +935,7 @@ private struct SidebarRow: View {
         .accessibilityValue([session.source.name, isMain ? "Main agent" : nil, row.stateTitle,
                              cueDescription, row.showsUnreadDot ? "Unread" : nil,
                              row.timestampDescription, session.stateSummary,
-                             !jumping && directShortcut ? "Shortcut Control Option \(position)" : "Row \(position)"]
+                             jumping || searching ? "Row \(position)" : "Shortcut \(numberShortcut)"]
             .compactMap { $0 }.joined(separator: ", "))
         .accessibilityAddTraits(keyboardSelected || pointerSelected ? .isSelected : [])
     }

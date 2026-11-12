@@ -521,6 +521,11 @@ final class OverlayController {
         func press(_ text: String, code: UInt16, flags: NSEvent.ModifierFlags = []) {
             sendTestKey(text, code: code, flags: flags)
         }
+        let startingLayout = store.showsAllSummaries
+        press("d", code: 2)
+        precondition(store.showsAllSummaries != startingLayout && !store.isSearching)
+        press("d", code: 2)
+        precondition(store.showsAllSummaries == startingLayout)
         press("g", code: 5)
         precondition(store.query == "g" && store.shownRows.contains { $0.session.source == .grok })
         press("\u{1b}", code: 53)
@@ -545,7 +550,8 @@ final class OverlayController {
         precondition(openedID == "two", "Numbering should start at one in Needs input")
         press("\t", code: 48)
         precondition(store.filter == .toReview && store.shownRows.map(\.id) == ["one"])
-        jumpByNumber()
+        press("0", code: 29)
+        precondition(store.numberEntry == "", "0 should open the number picker inside Relay")
         press("1", code: 18)
         press("\r", code: 36)
         precondition(openedID == "one", "Number entry should use the active filter")
@@ -577,8 +583,10 @@ final class OverlayController {
         precondition(store.isSearching && store.query.isEmpty)
         press("e", code: 14)
         press("l", code: 37)
-        precondition(store.query == "el" && store.count(for: .later) == 0,
-                     "Archive and Later keys must type normally in search")
+        press("d", code: 2)
+        press("0", code: 29)
+        precondition(store.query == "eld0" && store.count(for: .later) == 0 && store.numberEntry == nil
+                     && store.showsAllSummaries == startingLayout, "Shortcut keys must type normally in search")
         press("\u{1b}", code: 53)
         precondition(!store.isSearching && isShowing)
 
@@ -1125,6 +1133,12 @@ final class OverlayController {
                 case "/":
                     beginSearch()
                     return true
+                case "d" where store.filter != .archive:
+                    if !event.isARepeat { toggleDetails() }
+                    return true
+                case "0":
+                    jumpByNumber()
+                    return true
                 case "e", "l":
                     if store.filter != .archive, !event.isARepeat, let target = store.removeTarget(allowSelection: true) {
                         if key.lowercased() == "e" { onHide?(target) }
@@ -1132,9 +1146,8 @@ final class OverlayController {
                     }
                     return true
                 default:
-                    if let position = Int(key), Shortcut.numbers.contains(position),
-                       let session = store.session(in: position) {
-                        onOpen?(session)
+                    if let position = Int(key), Shortcut.numbers.contains(position) {
+                        if let session = store.session(in: position) { onOpen?(session) }
                         return true
                     }
                 }
