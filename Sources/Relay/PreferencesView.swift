@@ -1,0 +1,395 @@
+import SwiftUI
+
+enum PreferencesSection: String, CaseIterable, Identifiable {
+    case general, sources, shortcuts
+
+    var id: Self { self }
+    var title: String { rawValue.capitalized }
+}
+
+struct PreferencesView: View {
+    @ObservedObject var model: PreferencesModel
+    @ObservedObject var store: SessionStore
+    @State private var showsOptionalSources = false
+    @State private var showsStatusGuide = false
+
+    static let windowSize = CGSize(width: 520, height: 500)
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Picker("Settings section", selection: $model.selection) {
+                ForEach(PreferencesSection.allCases) { section in
+                    Text(section.title).tag(section)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 288)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 13)
+            Divider()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    switch model.selection {
+                    case .general: general
+                    case .sources: sources
+                    case .shortcuts: shortcuts
+                    }
+                }
+                .frame(maxWidth: 464)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 16)
+                .frame(maxWidth: .infinity)
+            }
+            .id(model.selection)
+            .defaultScrollAnchor(.top)
+        }
+        .frame(minWidth: 420, minHeight: 360)
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private var general: some View {
+        Group {
+            SettingsGroup(title: "Overlay") {
+                settingToggle("Show edge pill", detail: "Hover at the edge of your display to open Relay.",
+                              value: $model.edgeVisible)
+                SettingsDivider()
+                settingToggle("Show nudges", detail: "See when a chat finishes or needs input.",
+                              value: $model.nudgesEnabled)
+                if model.hasMultipleDisplays {
+                    SettingsDivider()
+                    SettingsRow {
+                        SettingsLabel(title: "Overlay display", detail: "Move Relay to the display under your pointer.")
+                    } control: {
+                        Button("Move here", action: model.moveOverlay)
+                            .controlSize(.small)
+                    }
+                }
+            }
+            SettingsGroup(title: "Session summaries") {
+                settingToggle("Summarize recent chat text",
+                              detail: "See what changed and what’s next. Chat text stays on this Mac.",
+                              value: $model.localPreviewsEnabled)
+            }
+            SettingsGroup(title: "Startup") {
+                settingToggle("Open at login", detail: model.loginItemNotice,
+                              value: Binding(get: { model.launchAtLogin }, set: model.setLaunchAtLogin))
+            }
+            if store.hiddenCount > 0 {
+                SettingsGroup(title: "Archived sessions") {
+                    SettingsRow {
+                        SettingsLabel(title: "\(store.hiddenCount) archived")
+                    } control: {
+                        Button("Restore all", action: model.restoreArchived)
+                            .controlSize(.small)
+                    }
+                }
+            }
+            statusGuide
+        }
+    }
+
+    private var sources: some View {
+        Group {
+            grokSettings
+            SettingsGroup(title: "Other sources") {
+                sourceToggle(.codex)
+                SettingsDivider()
+                settingToggle("Show automation runs", detail: "Include scheduled Codex runs in Relay.",
+                              value: Binding(get: { store.showsAutomationRuns }, set: { enabled in
+                                  guard enabled != store.showsAutomationRuns else { return }
+                                  store.setShowsAutomationRuns(enabled)
+                                  model.refreshSources()
+                              }))
+                SettingsDivider()
+                sourceToggle(.claude)
+                SettingsDivider()
+                sourceToggle(.cursor)
+            }
+            DisclosureGroup(isExpanded: $showsOptionalSources) {
+                SettingsGroup(title: "Instinct via Messages") {
+                    sourceToggle(.instinct)
+                    SettingsDivider()
+                    SettingsRow {
+                        SettingsLabel(title: "Recipient",
+                                      detail: model.instinctConfigured ? "Connected" : "Choose the Instinct chat in Messages.")
+                    } control: {
+                        Button(model.instinctConfigured ? "Edit…" : "Connect…", action: model.configureInstinct)
+                            .controlSize(.small)
+                    }
+                    if model.instinctConfigured {
+                        SettingsDivider()
+                        SettingsRow {
+                            SettingsLabel(title: "Reply tracking", detail: "Allow Relay to check for Messages replies.")
+                        } control: {
+                            Button("Open privacy settings", action: model.openFullDiskAccess)
+                                .controlSize(.small)
+                        }
+                    }
+                }
+                .padding(.top, 10)
+            } label: {
+                Text("Additional sources")
+                    .font(.system(size: 12, weight: .medium))
+            }
+            .padding(.horizontal, 2)
+            Button("Refresh sessions", systemImage: "arrow.clockwise", action: model.refreshSources)
+                .controlSize(.small)
+                .padding(.horizontal, 2)
+        }
+    }
+
+    private var grokSettings: some View {
+        let agents = store.availableGrokSessions
+        let markedCount = agents.filter { store.mainGrokIDs.contains($0.id) }.count
+        return SettingsGroup(title: "Grok Bot") {
+            sourceToggle(.grok, title: "Track sessions")
+            SettingsDivider()
+            SettingsRow {
+                SettingsLabel(title: "Show in Relay")
+            } control: {
+                Picker("Grok Bot agents shown", selection: Binding(get: { store.grokMainOnly },
+                                                                  set: store.setGrokMainOnly)) {
+                    Text("All agents").tag(false)
+                    Text("Main agents").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 204)
+            }
+            SettingsDivider()
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Mark main agents")
+                        .font(.system(size: 12, weight: .semibold))
+                        .accessibilityAddTraits(.isHeader)
+                    Spacer()
+                    if !agents.isEmpty {
+                        Text("\(markedCount) marked")
+                            .font(.system(size: 11))
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                if agents.isEmpty {
+                    Text(model.sourceEnabled[.grok] == true
+                         ? "No recent Grok Bot agents. Open a chat to add it here."
+                         : "Turn on Grok Bot to find your agents.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    if markedCount == 0 {
+                        Text(store.grokMainOnly
+                             ? "Check an agent to show it in Relay."
+                             : "Check the agents you want to keep when filtering.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                    VStack(alignment: .leading, spacing: 1) {
+                        ForEach(agents) { agent in
+                            Toggle(isOn: Binding(get: { store.mainGrokIDs.contains(agent.id) },
+                                                 set: { store.setGrokMain(id: agent.id, isMain: $0) })) {
+                                Text(agent.title)
+                                    .font(.system(size: 13))
+                                    .lineLimit(1)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .contentShape(Rectangle())
+                            }
+                            .toggleStyle(.checkbox)
+                            .frame(minHeight: 26, alignment: .leading)
+                            .help(agent.title)
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 13)
+            .padding(.top, 11)
+            .padding(.bottom, 9)
+        }
+    }
+
+    private var shortcuts: some View {
+        Group {
+            SettingsGroup(title: "Anywhere") {
+                shortcutRow("Show or hide sessions", key: "⌃⌥Space", shortcut: .overlay)
+                SettingsDivider()
+                shortcutRow("Open rows 1 through 9", detail: unavailableRowShortcuts, key: "⌃⌥1…9")
+                SettingsDivider()
+                shortcutRow("Jump by row number", detail: "Type a row number, then press Return.",
+                            key: "⌃⌥0", shortcut: .jumpNumber)
+                SettingsDivider()
+                shortcutRow("Switch between line and detail views", key: "⌃⌥D", shortcut: .details)
+                SettingsDivider()
+                shortcutRow("Review the next session", key: "⌃⌥Return", shortcut: .next)
+                SettingsDivider()
+                shortcutRow("Archive a session", key: "⌃⌥A", shortcut: .archive)
+            }
+            SettingsGroup(title: "In the sidebar") {
+                shortcutRow("Find a session", key: "Type to search")
+                SettingsDivider()
+                shortcutRow("Move selection", key: "↑  ↓")
+                SettingsDivider()
+                shortcutRow("Open selected session", key: "Return")
+                SettingsDivider()
+                shortcutRow("Mark read or unread", key: "⌘U")
+                SettingsDivider()
+                shortcutRow("Archive selected session", key: "Delete")
+                SettingsDivider()
+                shortcutRow("Undo archive", key: "⌘Z")
+                SettingsDivider()
+                shortcutRow("Clear search or close", key: "Esc")
+            }
+        }
+    }
+
+    private var statusGuide: some View {
+        DisclosureGroup(isExpanded: $showsStatusGuide) {
+            VStack(alignment: .leading, spacing: 9) {
+                statusDefinition("To review", "A result or activity is waiting for review.")
+                statusDefinition("Read", "The latest update was opened or marked read.")
+                statusDefinition("Needs input", "An approval, decision, or answer is pending.")
+                statusDefinition("Working", "The source reports an active turn.")
+                statusDefinition("Quiet", "The source has reported no new result or input request.")
+                statusDefinition("Stale", "A quiet session with no reported activity for eight hours.")
+                statusDefinition("Status unavailable", "Relay has no status signal for this session.")
+            }
+            .padding(.top, 10)
+        } label: {
+            Text("What statuses mean")
+                .font(.system(size: 12, weight: .medium))
+        }
+        .padding(.horizontal, 2)
+    }
+
+    private func sourceToggle(_ source: Source, title: String? = nil) -> some View {
+        settingToggle(title ?? source.name,
+                      value: Binding(get: { model.sourceEnabled[source] ?? false },
+                                     set: { model.setSource(source, enabled: $0) }))
+    }
+
+    private var unavailableRowShortcuts: String? {
+        let rows = Shortcut.numbers.compactMap { Shortcut(rawValue: $0) }
+            .filter { model.unavailableShortcuts.contains($0) }
+            .map(\.glyph)
+        if rows.isEmpty { return nil }
+        return "Unavailable shortcuts \(rows.joined(separator: ", "))"
+    }
+
+    private func settingToggle(_ title: String, detail: String? = nil, value: Binding<Bool>) -> some View {
+        SettingsRow {
+            SettingsLabel(title: title, detail: detail)
+                .accessibilityHidden(true)
+        } control: {
+            Toggle(title, isOn: value)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .accessibilityLabel(title)
+                .accessibilityHint(detail ?? "")
+        }
+    }
+
+    private func shortcutRow(_ title: String, detail: String? = nil, key: String,
+                             shortcut: Shortcut? = nil) -> some View {
+        SettingsRow(compact: true) {
+            SettingsLabel(title: title, detail: shortcut.map { model.unavailableShortcuts.contains($0) } == true
+                          ? "Unavailable on this Mac." : detail)
+        } control: {
+            ShortcutKeycap(text: key)
+        }
+    }
+
+    private func statusDefinition(_ title: String, _ detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.system(size: 12, weight: .medium))
+            Text(detail).font(.system(size: 11)).foregroundStyle(.secondary)
+        }
+    }
+}
+
+private struct SettingsGroup<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: Content
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .accessibilityAddTraits(.isHeader)
+            VStack(spacing: 0) {
+                content
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color(nsColor: .controlBackgroundColor).opacity(0.54))
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 10)
+                    .strokeBorder(Color(nsColor: .separatorColor).opacity(contrast == .increased ? 0.8 : 0.38))
+                    .allowsHitTesting(false)
+            }
+        }
+    }
+}
+
+private struct SettingsRow<Label: View, Control: View>: View {
+    var compact = false
+    @ViewBuilder let label: Label
+    @ViewBuilder let control: Control
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 14) {
+            label
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .layoutPriority(1)
+            control
+        }
+        .padding(.horizontal, 13)
+        .padding(.vertical, compact ? 4 : 9)
+        .frame(minHeight: compact ? 27 : 40)
+    }
+}
+
+private struct SettingsDivider: View {
+    var body: some View {
+        Divider()
+            .padding(.leading, 13)
+            .padding(.trailing, 13)
+    }
+}
+
+private struct SettingsLabel: View {
+    let title: String
+    var detail: String? = nil
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.system(size: 13))
+            if let detail {
+                Text(detail)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
+
+private struct ShortcutKeycap: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 11, weight: .medium, design: .monospaced))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 4))
+            .fixedSize()
+    }
+}
