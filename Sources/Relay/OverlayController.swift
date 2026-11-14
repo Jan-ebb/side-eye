@@ -990,6 +990,9 @@ final class OverlayController {
         sendTestKey("\u{f701}", code: 125)
         try? await Task.sleep(for: .milliseconds(350))
         precondition(store.filter == .favorites && store.selectedID == "two")
+        sendTestKey("\u{7f}", code: 51)
+        precondition(store.rows.contains { $0.id == "two" } && store.notice == Self.favoritesKeepNotice,
+                     "Delete must not archive from Favorites")
         if let previewDirectory { renderLiveSidebar(to: previewDirectory.appendingPathComponent("live-favorites-down.png")) }
         for id in starred { if let row = store.rows.first(where: { $0.id == id }) { _ = store.togglePin(row.session) } }
         store.setFilter(.all)
@@ -1243,6 +1246,7 @@ final class OverlayController {
             if let session = rows.first(where: { $0.id == store.selectedID })?.session { onOpen?(session) }
         case 51, 117:
             if store.isSearching { store.setQuery(String(store.query.dropLast())) }
+            else if store.filter == .favorites { if !event.isARepeat { report(Self.favoritesKeepNotice) } }
             else if let target = store.removeTarget(allowSelection: true) { onHide?(target) }
         default:
             guard let key = event.characters, !key.isEmpty,
@@ -1361,6 +1365,9 @@ final class OverlayController {
             }
         }
     }
+
+    /// Favorites is a lasting list, so archive keys explain themselves there instead of archiving.
+    static let favoritesKeepNotice = "Favorites keeps its chats. F removes one; archive from the Inbox."
 
     func togglePin(_ session: Session) {
         switch store.togglePin(session) {

@@ -177,6 +177,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             overlay?.openPalette()
         case .archive:
             if overlay?.isShowing == true, store.filter == .archive { return }
+            if overlay?.isShowing == true, store.filter == .favorites {
+                overlay?.report(OverlayController.favoritesKeepNotice)
+                return
+            }
             if let session = store.removeTarget(allowSelection: overlay?.isShowing ?? false) {
                 hide(session)
             } else {
