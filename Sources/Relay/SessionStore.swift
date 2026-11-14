@@ -50,7 +50,7 @@ enum SessionGroup: Int, CaseIterable, Hashable {
         case .needsInput: "Needs input"
         case .finished: "Finished"
         case .working: "Working"
-        case .quiet: "Quiet"
+        case .quiet: "Idle"
         }
     }
 

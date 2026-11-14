@@ -730,10 +730,10 @@ struct SidebarView: View {
             if foldable {
                 Button { store.setQuietCollapsed(!collapsed) } label: { content }
                     .buttonStyle(.plain)
-                    .help(collapsed ? "Show quiet chats (select and press ↵)" : "Hide quiet chats (select and press ↵)")
+                    .help(collapsed ? "Show idle chats (select and press ↵)" : "Hide idle chats (select and press ↵)")
                     .accessibilityLabel("\(group.label), \(count)")
                     .accessibilityValue(collapsed ? "Collapsed" : "Expanded")
-                    .accessibilityHint(collapsed ? "Shows quiet chats" : "Hides quiet chats")
+                    .accessibilityHint(collapsed ? "Shows idle chats" : "Hides idle chats")
             } else {
                 content
                     .accessibilityElement(children: .ignore)
@@ -906,7 +906,7 @@ struct SidebarView: View {
                 Spacer(minLength: 0)
                 if store.isQuietHeaderSelected {
                     let collapsed = store.quietCollapsed
-                    barButton(collapsed ? "Show quiet" : "Hide quiet", key: "↵", prominent: true,
+                    barButton(collapsed ? "Show idle" : "Hide idle", key: "↵", prominent: true,
                               accessibilityHint: "Return") { store.setQuietCollapsed(!collapsed) }
                 } else if let selected {
                     if !browsingArchive {

@@ -266,8 +266,8 @@ struct PreferencesView: View {
                 statusDefinition("Read", "The latest update was opened or marked read.")
                 statusDefinition("Needs input", "An approval, decision, or answer is pending.")
                 statusDefinition("Working", "The source reports an active turn.")
-                statusDefinition("Quiet", "The source has reported no new result or input request.")
-                statusDefinition("Inactive", "A quiet session with no reported activity for eight hours.")
+                statusDefinition("Idle", "Nothing is happening: the agent is not working and not waiting on you.")
+                statusDefinition("Inactive", "An idle chat with no reported activity for eight hours.")
                 statusDefinition("Status unavailable", "Relay has no status signal for this session.")
             }
             .padding(.top, 10)

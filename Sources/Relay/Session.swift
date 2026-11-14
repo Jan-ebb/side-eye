@@ -82,7 +82,7 @@ struct SessionRow: Identifiable, Equatable {
     var statusLabel: String {
         switch session.status {
         case .ready: needsReview ? "To review" : "Read"
-        case .idle: isStale ? "Inactive" : "Quiet"
+        case .idle: isStale ? "Inactive" : "Idle"
         default: session.status.name
         }
     }
