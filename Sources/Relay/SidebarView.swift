@@ -103,8 +103,24 @@ enum OverlayMetrics {
         return min(height, store.showsAllSummaries && store.numberEntry == nil ? maxBriefingListHeight : maxListHeight)
     }
 
+    static let paletteRowHeight: CGFloat = 29
+    static let paletteSectionHeight: CGFloat = 24
+
+    @MainActor
+    static func paletteListHeight(for store: SessionStore) -> CGFloat {
+        let entries = store.paletteEntries
+        guard !entries.isEmpty else { return emptyHeight }
+        let sections = Set(entries.map(\.section)).count
+        let height = 2 * listInset + CGFloat(entries.count) * paletteRowHeight + CGFloat(sections) * paletteSectionHeight
+            + CGFloat(entries.count + sections - 1)
+        return min(height, maxListHeight)
+    }
+
     @MainActor
     static func sidebarHeight(for store: SessionStore) -> CGFloat {
+        if store.palette != nil {
+            return headerHeight + paletteListHeight(for: store) + footerHeight + 2
+        }
         let list = listHeight(for: store)
         if store.numberEntry != nil {
             let detailHeight = store.enteredSession.map(jumpDetailHeight(for:)) ?? 0
@@ -448,6 +464,7 @@ struct SidebarView: View {
     let restoreArchived: (Session) -> Void
     var undo: () -> Void = {}
     var togglePin: (Session) -> Void = { _ in }
+    var runPalette: (PaletteEntry) -> Void = { _ in }
     var onHighlightRow: ((String) -> Void)? = nil
     var drawsSurface = true
     var presentation = 0
@@ -474,7 +491,12 @@ struct SidebarView: View {
         let keyboardTarget = jumping ? entered?.id : (store.keyboardMode ? store.selectedID : nil)
         let shape = RoundedRectangle(cornerRadius: OverlayMetrics.sidebarCornerRadius, style: .continuous)
         return VStack(spacing: 0) {
-            if showsToolbar {
+            if let palette = store.palette {
+                paletteHeader(palette)
+                    .frame(height: OverlayMetrics.headerHeight)
+                    .overlay(alignment: .bottom) { hairline }
+                paletteList(palette)
+            } else if showsToolbar {
                 if browsingArchive {
                     header
                         .frame(height: OverlayMetrics.compactToolbarHeight)
@@ -498,7 +520,9 @@ struct SidebarView: View {
                         .overlay(alignment: .bottom) { hairline }
                 }
             }
-            if items.isEmpty {
+            if store.palette != nil {
+                EmptyView()
+            } else if items.isEmpty {
                 empty
             } else {
                 sessionList(items, rowCount: rowCount, keyboardTarget: keyboardTarget, now: now)
@@ -696,7 +720,9 @@ struct SidebarView: View {
         let hasActions = !browsingArchive && !jumping && !store.isSearching && store.selectedID == row.id
         // Pinned rows leave their group, so they carry its glyph themselves.
         let stateGlyph = store.filter == .all && store.isPinned(row.id) ? SessionGroup(row) : nil
+        let returnLabel = store.filter == .later ? store.returnDate(for: row.id).map { Self.returnLabel($0, now: now) } : nil
         return SidebarRow(row: row, position: position, isNext: isNext, preview: preview, stateGlyph: stateGlyph,
+                          returnLabel: returnLabel,
                           jumping: jumping, searching: store.isSearching,
                           keyboardSelected: keyboardSelected, selected: keyboardSelected || pointerSelected,
                           showsMainChip: isMain && (jumping || store.showsAllSummaries),
@@ -886,14 +912,22 @@ struct SidebarView: View {
         let target = jumping ? store.enteredSession?.id : store.selectedID
         let selected = store.shownRows.first { $0.id == target }
         return HStack(spacing: 12) {
-            if let notice = store.notice {
+            if store.palette != nil {
+                keyHint("esc", "Close")
+                Spacer(minLength: 0)
+                if let entry = store.selectedPaletteEntry {
+                    barButton(paletteVerb(entry), key: "↵", prominent: true, accessibilityHint: "Return") {
+                        runPalette(entry)
+                    }
+                }
+            } else if let notice = store.notice {
                 Text(notice)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .accessibilityAddTraits(.updatesFrequently)
                 Spacer(minLength: 0)
                 if store.noticeOffersUndo && store.canUndo && !jumping {
-                    barButton("Undo", key: "⌘Z", prominent: true, accessibilityHint: "Command Z", action: undo)
+                    barButton("Undo", key: "Z", prominent: true, accessibilityHint: "Z", action: undo)
                 }
             } else if jumping {
                 if let prompt = jumpPrompt { Text(prompt) }
@@ -971,6 +1005,138 @@ struct SidebarView: View {
         .fixedSize()
     }
 
+    // MARK: ⌘K palette
+
+    private func paletteHeader(_ palette: PaletteState) -> some View {
+        let placeholder = palette.choosingLater ? "When should it come back?" : "Type a command or a chat"
+        return HStack(spacing: 8) {
+            Image(systemName: palette.choosingLater ? "alarm" : "command")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(colors.secondary)
+                .accessibilityHidden(true)
+            Text(palette.query.isEmpty ? placeholder : palette.query)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(palette.query.isEmpty ? colors.secondary : colors.primary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 0)
+            KeyCap(key: "⌘K", colors: colors)
+        }
+        .padding(.horizontal, 13)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(palette.query.isEmpty ? placeholder : "Command \(palette.query)")
+    }
+
+    @ViewBuilder
+    private func paletteList(_ palette: PaletteState) -> some View {
+        let entries = store.paletteEntries
+        if entries.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Nothing matches").font(.system(size: 14, weight: .semibold))
+                Text("Try a chat’s name or a command like “archive”.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(colors.body)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .padding(.horizontal, 14)
+        } else {
+            let selectedID = entries.indices.contains(palette.index) ? entries[palette.index].id : nil
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 1) {
+                        ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
+                            if index == 0 || entries[index - 1].section != entry.section {
+                                Text(entry.section)
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(colors.secondary)
+                                    .lineLimit(1)
+                                    .padding(.leading, OverlayMetrics.rowInset + OverlayMetrics.shortcutWidth
+                                        + OverlayMetrics.rowSpacing)
+                                    .frame(height: OverlayMetrics.paletteSectionHeight - 4, alignment: .bottom)
+                                    .padding(.bottom, 4)
+                                    .accessibilityAddTraits(.isHeader)
+                            }
+                            paletteRow(entry, selected: entry.id == selectedID, index: index)
+                                .id(entry.id)
+                        }
+                    }
+                    .padding(OverlayMetrics.listInset)
+                }
+                .scrollBounceBehavior(.basedOnSize)
+                .onChange(of: selectedID, initial: true) { _, id in
+                    if let id { proxy.scrollTo(id) }
+                }
+            }
+        }
+    }
+
+    private func paletteRow(_ entry: PaletteEntry, selected: Bool, index: Int) -> some View {
+        Button { runPalette(entry) } label: {
+            HStack(spacing: OverlayMetrics.rowSpacing) {
+                Group {
+                    switch entry.icon {
+                    case .symbol(let name):
+                        Image(systemName: name)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(colors.secondary)
+                    case .source:
+                        if let group = entry.group { GroupGlyph(group: group, colors: colors) }
+                    }
+                }
+                .frame(width: OverlayMetrics.shortcutWidth)
+                HStack(spacing: OverlayMetrics.sourceIconSpacing) {
+                    if case .source(let source) = entry.icon {
+                        SourceAppIcon(source: source, size: OverlayMetrics.sourceIconSize)
+                            .frame(width: OverlayMetrics.sourceIconSize, height: OverlayMetrics.sourceIconSize)
+                    }
+                    Text(entry.title)
+                        .font(.system(size: 14, weight: .medium))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                if let detail = entry.detail {
+                    Text(detail)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(colors.secondary)
+                        .lineLimit(1)
+                        .fixedSize()
+                }
+                if let key = entry.key { KeyCap(key: key, colors: colors) }
+            }
+            .padding(.horizontal, OverlayMetrics.rowInset)
+            .frame(height: OverlayMetrics.paletteRowHeight)
+            .background(selected ? colors.selection : .clear, in: RoundedRectangle(cornerRadius: 5))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { inside in
+            if inside, var state = store.palette, state.index != index {
+                state.index = index
+                store.palette = state
+            }
+        }
+        .accessibilityLabel(entry.title)
+        .accessibilityValue([entry.detail, entry.key.map { "Shortcut \($0)" }].compactMap { $0 }.joined(separator: ", "))
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private func paletteVerb(_ entry: PaletteEntry) -> String {
+        switch entry.action {
+        case .chat, .command(.open): "Open"
+        case .later: "Set"
+        case .command(.laterUntil): "Choose"
+        case .command: "Run"
+        }
+    }
+
+    /// Short return time for a chat in Later: the hour today, otherwise the weekday.
+    static func returnLabel(_ date: Date, now: Date) -> String {
+        Calendar.current.isDate(date, inSameDayAs: now)
+            ? date.formatted(.dateTime.hour().minute())
+            : date.formatted(.dateTime.weekday(.abbreviated))
+    }
+
     private var hairline: some View {
         Rectangle().fill(borderColor).frame(height: 1)
     }
@@ -982,6 +1148,8 @@ private struct SidebarRow: View {
     let isNext: Bool
     let preview: RowPreview?
     let stateGlyph: SessionGroup?
+    /// For chats in Later with a time: when they come back.
+    let returnLabel: String?
     let jumping: Bool
     let searching: Bool
     let keyboardSelected: Bool
@@ -1034,7 +1202,13 @@ private struct SidebarRow: View {
                     if !jumping {
                         ZStack(alignment: .trailing) {
                             Color.clear
-                            if let timestamp = row.timestamp {
+                            if let returnLabel {
+                                Label(returnLabel, systemImage: "alarm")
+                                    .labelStyle(.titleAndIcon)
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundStyle(colors.secondary)
+                                    .fixedSize()
+                            } else if let timestamp = row.timestamp {
                                 RowTimestamp(date: timestamp, now: now, colors: colors)
                             }
                         }

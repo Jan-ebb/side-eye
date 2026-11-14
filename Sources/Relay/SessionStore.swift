@@ -102,6 +102,8 @@ final class SessionStore: ObservableObject {
     @Published private(set) var pinnedIDs: [String]
     @Published private(set) var showsAutomationRuns: Bool
     @Published var numberEntry: String?
+    /// The ⌘K palette while it is open.
+    @Published var palette: PaletteState?
     @Published private(set) var grokMainOnly = false
     @Published private(set) var mainGrokIDs: Set<String> = []
     @Published private(set) var availableGrokSessions: [Session] = []
@@ -324,6 +326,8 @@ final class SessionStore: ObservableObject {
     private struct SavedSession: Codable, Equatable {
         let snapshot: Session
         let deferredAt: Date?
+        /// When a chat in Later comes back by itself. Nil keeps it until you move it back.
+        var until: Date? = nil
     }
 
     private struct History: Codable, Equatable {
@@ -577,6 +581,42 @@ final class SessionStore: ObservableObject {
         return deferSession
     }
 
+    /// Moves a chat to Later until a time, when it comes back to All marked unread.
+    /// A chat already in Later just gets the new time.
+    @discardableResult
+    func deferSession(_ session: Session, until: Date?) -> Bool {
+        guard let current = rows.first(where: { $0.id == session.id })?.session else { return false }
+        let index = shownRows.firstIndex { $0.id == current.id }
+        let previous = history.savedSessions?[current.id]
+        saveSession(SavedSession(snapshot: Self.snapshot(of: current), deferredAt: previous?.deferredAt ?? Date(),
+                                 until: until), id: current.id)
+        lastChange = .later(current.id, previous: previous)
+        rebuild()
+        selectRow(afterRemoving: index)
+        persist()
+        return true
+    }
+
+    /// When a chat in Later is due back, or nil if it waits for you.
+    func returnDate(for id: String) -> Date? {
+        history.savedSessions?[id]?.until
+    }
+
+    /// Brings back chats whose Later time has passed, marked unread so they get noticed.
+    private func returnDueChats(now: Date) {
+        guard let saved = history.savedSessions else { return }
+        let due = saved.filter { _, entry in entry.deferredAt != nil && (entry.until.map { $0 <= now } ?? false) }
+        guard !due.isEmpty else { return }
+        var unread = history.manuallyUnread ?? []
+        for (id, entry) in due {
+            saveSession(latest[id] == nil ? SavedSession(snapshot: entry.snapshot, deferredAt: nil) : nil, id: id)
+            unread.insert(id)
+        }
+        history.manuallyUnread = unread
+        if case .later(let id, _) = lastChange, due[id] != nil { lastChange = nil }
+        persist()
+    }
+
     private func selectRow(afterRemoving index: Int?) {
         let visible = shownRows
         if let index, !visible.isEmpty, (numberEntry ?? "").isEmpty {
@@ -662,6 +702,7 @@ final class SessionStore: ObservableObject {
             }
         if availableGrokSessions != grokAgents { availableGrokSessions = grokAgents }
 
+        returnDueChats(now: now)
         let staleBefore = now.addingTimeInterval(-Self.staleAge)
         let snapshots = history.savedSessions?.values.compactMap { saved in
             latest[saved.snapshot.id] == nil ? saved.snapshot : nil

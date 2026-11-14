@@ -173,6 +173,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             overlay?.jumpByNumber()
         case .details:
             overlay?.toggleDetails()
+        case .palette:
+            overlay?.openPalette()
         case .archive:
             if overlay?.isShowing == true, store.filter == .archive { return }
             if let session = store.removeTarget(allowSelection: overlay?.isShowing ?? false) {

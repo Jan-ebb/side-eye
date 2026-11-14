@@ -60,7 +60,7 @@ final class OverlayController {
     private enum Timing {
         static let hoverOpen: Duration = .milliseconds(20)
         static let hoverExit: Duration = .milliseconds(25)
-        static let contentReveal: TimeInterval = 0.210
+        static let contentReveal: TimeInterval = 0.140
         static let reentryCheck: Duration = .milliseconds(12)
     }
 
@@ -142,6 +142,7 @@ final class OverlayController {
                                restoreArchived: { [weak self] in self?.onRestoreArchived?($0) },
                                undo: { [weak self] in self?.onUndo?() },
                                togglePin: { [weak self] in self?.togglePin($0) },
+                               runPalette: { [weak self] in self?.runPaletteEntry($0) },
                                onHighlightRow: { [weak self] in self?.highlightRow($0) },
                                drawsSurface: false)
         let sidebarContent = HoverHost(rootView: list)
@@ -314,10 +315,25 @@ final class OverlayController {
             if let content = sidebar.contentView as? HoverHost<SidebarView> {
                 content.rootView.presentation += 1
             }
-            expandSidebar()
+            expandSidebar(animated: !keyboard)
         }
         installClickMonitors()
         sidebar.makeKey()
+    }
+
+    /// Opens the ⌘K palette, from inside the sidebar or from any app with ⌃⌥K.
+    func openPalette(choosingLater: Bool = false) {
+        if !isShowing || !keyboardPinned { show(keyboard: true) }
+        setNumberEntry(nil)
+        store.setQuery(nil)
+        store.openPalette(choosingLater: choosingLater)
+        position()
+    }
+
+    func closePalette() {
+        guard store.palette != nil else { return }
+        store.closePalette()
+        position()
     }
 
     func close(morphing: Bool = false) {
@@ -333,6 +349,7 @@ final class OverlayController {
         if let collapseFrom { collapseSidebar(from: collapseFrom) }
         else { finishCollapse() }
         setNumberEntry(nil)
+        store.closePalette()
         store.setQuery(nil)
         if store.filter == .archive { store.setFilter(.all) }
         removeClickMonitors()
@@ -395,11 +412,12 @@ final class OverlayController {
         rail.hasShadow = visible
     }
 
-    private func expandSidebar() {
+    /// Hover grows the pill into the sidebar. A keyboard shortcut shows it at once, like a launcher.
+    private func expandSidebar(animated: Bool = true) {
         collapseTask?.cancel()
         collapseTask = nil
         let final = sidebarShape()
-        let motion: SidebarMorph.Motion? = isEdgeVisible && !reduceMotion ? .opening : nil
+        let motion: SidebarMorph.Motion? = animated && isEdgeVisible && !reduceMotion ? .opening : nil
         let initial = motion != nil ? pillShape(phase: railMotion.phase) : final
         let presented = morph.transition(from: initial, to: final, count: pillCount,
                                          countColor: pillCountColor, motion: motion)
@@ -532,6 +550,9 @@ final class OverlayController {
         press("d", code: 2)
         precondition(store.showsAllSummaries == startingLayout)
         press("g", code: 5)
+        precondition(!store.isSearching, "Letters are commands; they must not start a search")
+        press("/", code: 44)
+        press("g", code: 5)
         precondition(store.query == "g" && store.shownRows.contains { $0.session.source == .grok })
         press("\u{1b}", code: 53)
         precondition(store.query.isEmpty && isShowing)
@@ -580,6 +601,17 @@ final class OverlayController {
                      "P should pin the selected chat to the top")
         press("p", code: 35)
         precondition(store.sections.first?.group != .pinned && !store.isPinned("three"))
+        press("k", code: 40, flags: .command)
+        precondition(store.palette != nil && store.paletteTarget?.id == "three", "⌘K should open the palette on the selection")
+        for (character, code) in [("p", 35), ("i", 34), ("n", 45)] { press(character, code: UInt16(code)) }
+        precondition(store.selectedPaletteEntry?.action == .command(.pin), "Typing should filter the palette")
+        press("\r", code: 36)
+        precondition(store.palette == nil && store.isPinned("three"), "↵ should run the chosen command and close")
+        press("p", code: 35)
+        press("h", code: 4)
+        precondition(store.palette?.choosingLater == true, "H should ask when the chat comes back")
+        press("\u{1b}", code: 53)
+        precondition(store.palette == nil)
         store.selectedID = "two"
         press("0", code: 29)
         precondition(store.numberEntry == "", "0 should open the number picker inside Relay")
@@ -1101,8 +1133,15 @@ final class OverlayController {
     private func handleKey(_ event: NSEvent) -> Bool {
         guard isShowing, sidebar.acceptsKeyboard else { return false }
         let flags = event.modifierFlags.intersection([.shift, .control, .option, .command])
+        if store.palette != nil {
+            handlePaletteKey(event, flags: flags)
+            return true
+        }
         if flags == [.command] {
             switch event.charactersIgnoringModifiers?.lowercased() {
+            case "k":
+                openPalette()
+                return true
             case "z":
                 onUndo?()
                 return true
@@ -1198,6 +1237,17 @@ final class OverlayController {
                         togglePin(target)
                     }
                     return true
+                case "h":
+                    if store.filter != .archive, !event.isARepeat, store.removeTarget(allowSelection: true) != nil {
+                        openPalette(choosingLater: true)
+                    }
+                    return true
+                case "j", "k":
+                    moveSelection(by: key.lowercased() == "j" ? 1 : -1)
+                    return true
+                case "z":
+                    if !event.isARepeat { onUndo?() }
+                    return true
                 default:
                     if let position = Int(key), Shortcut.numbers.contains(position) {
                         if let session = store.session(in: position) { onOpen?(session) }
@@ -1205,9 +1255,77 @@ final class OverlayController {
                     }
                 }
             }
+            // Letters are commands, as in Superhuman; typing searches only after / or inside ⌘K.
+            guard store.isSearching else { return true }
             store.setQuery(store.query + key)
         }
         return true
+    }
+
+    private func handlePaletteKey(_ event: NSEvent, flags: NSEvent.ModifierFlags) {
+        if flags == [.command], event.charactersIgnoringModifiers?.lowercased() == "k" {
+            closePalette()
+            return
+        }
+        if flags == [.control], let key = event.charactersIgnoringModifiers?.lowercased(), key == "n" || key == "p" {
+            store.movePaletteSelection(by: key == "n" ? 1 : -1)
+            return
+        }
+        switch event.keyCode {
+        case 53:
+            closePalette()
+        case 125, 126:
+            store.movePaletteSelection(by: event.keyCode == 125 ? 1 : -1)
+        case 36, 76:
+            if let entry = store.selectedPaletteEntry { runPaletteEntry(entry) }
+        case 51, 117:
+            store.deleteInPalette()
+            position()
+        default:
+            guard flags.subtracting(.shift).isEmpty, let text = event.characters, !text.isEmpty,
+                  text.unicodeScalars.allSatisfy({ CharacterSet.alphanumerics.union(.punctuationCharacters)
+                      .union(.symbols).union(.whitespaces).contains($0) }) else { return }
+            store.typeInPalette(text)
+            position()
+        }
+    }
+
+    func runPaletteEntry(_ entry: PaletteEntry) {
+        let target = store.paletteTarget?.session
+        switch entry.action {
+        case .chat(let id):
+            closePalette()
+            if let session = store.session(id: id) { onOpen?(session) }
+        case .later(let date):
+            closePalette()
+            guard let target, store.deferSession(target, until: date) else { return }
+            let when = date.map { " until " + SessionStore.describe($0, now: Date()) } ?? ""
+            report("Moved “\(target.title)” to Later\(when)", undoable: true)
+        case .command(.laterUntil):
+            store.showLaterTimes()
+            position()
+        case .command(let command):
+            closePalette()
+            switch command {
+            case .open: if let target { onOpen?(target) }
+            case .archive: if let target { onHide?(target) }
+            case .later: if let target { onLater?(target) }
+            case .pin: if let target { togglePin(target) }
+            case .read:
+                if let target, let row = store.rows.first(where: { $0.id == target.id }) {
+                    if row.needsReview { store.markRead(target) } else { store.markUnread(target) }
+                }
+            case .previews: store.setShowsAllSummaries(!store.showsAllSummaries)
+            case .idle: store.setQuietCollapsed(!store.quietCollapsed)
+            case .switchTab: store.setFilter(store.filter == .later ? .all : .later)
+            case .archiveList: showArchive()
+            case .jump: jumpByNumber()
+            case .search: beginSearch()
+            case .undo: onUndo?()
+            case .settings: onShowSettings?()
+            case .laterUntil: break
+            }
+        }
     }
 
     func togglePin(_ session: Session) {

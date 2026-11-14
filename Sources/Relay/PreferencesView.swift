@@ -214,8 +214,13 @@ struct PreferencesView: View {
         Group {
             SettingsGroup(title: "From any app") {
                 shortcutRow("Show or hide Relay", key: "⌃⌥Space", shortcut: .overlay)
+                SettingsDivider()
+                shortcutRow("Open the command palette", detail: "Find any chat or command by typing.",
+                            key: "⌃⌥K", shortcut: .palette)
             }
             SettingsGroup(title: "When Relay is open") {
+                shortcutRow("Command palette", detail: "Every command shows its key here.", key: "⌘K")
+                SettingsDivider()
                 shortcutRow("Open rows 1 through 9", key: "1–9")
                 SettingsDivider()
                 shortcutRow("Jump to a row", detail: "Type a row number, then press Return.", key: "0")
@@ -226,15 +231,21 @@ struct PreferencesView: View {
                 SettingsDivider()
                 shortcutRow("Move to or from Later", key: "L")
                 SettingsDivider()
+                shortcutRow("Later until a time", detail: "The chat comes back by itself, marked unread.", key: "H")
+                SettingsDivider()
+                shortcutRow("Pin to the top", key: "P")
+                SettingsDivider()
                 shortcutRow("Search chats", key: "/")
                 SettingsDivider()
-                shortcutRow("Move selection", key: "↑  ↓")
+                shortcutRow("Move selection", key: "J  K  or  ↑  ↓")
+                SettingsDivider()
+                shortcutRow("Jump between groups", key: "⌥↑  ⌥↓")
                 SettingsDivider()
                 shortcutRow("Open the selected chat", key: "Return")
                 SettingsDivider()
                 shortcutRow("Mark read or unread", key: "⌘U")
                 SettingsDivider()
-                shortcutRow("Undo the last move", key: "⌘Z")
+                shortcutRow("Undo the last move", key: "Z")
                 SettingsDivider()
                 shortcutRow("Exit search or close Relay", key: "Esc")
             }

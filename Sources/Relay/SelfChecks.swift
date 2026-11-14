@@ -107,6 +107,7 @@ enum SelfChecks {
         checkLater(now: now)
         checkArchive(now: now)
         checkGrouping(now: now)
+        checkPalette(now: now)
 
         let ordered = SessionStore(defaults: nil)
         let older = sample("older", .codex, "Older completion", .ready, now,
@@ -473,6 +474,42 @@ enum SelfChecks {
         store.acknowledge(olderReply)
         precondition(store.sidebarItems.first == .allClear && store.nextActionID == nil,
                      "With nothing to act on, the list should say so first")
+    }
+
+    private static func checkPalette(now: Date) {
+        let suite = "com.relay.sessions.palette-self-test.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else { preconditionFailure("Missing test preferences") }
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = SessionStore(defaults: defaults)
+        let reply = sample("reply", .codex, "Export retry", .ready, now, completedAt: now)
+        let working = sample("working", .claude, "Billing cleanup", .working, now)
+        store.ingest([reply, working], now: now)
+
+        store.selectedID = reply.id
+        store.openPalette()
+        precondition(store.paletteTarget?.id == reply.id && store.selectedPaletteEntry?.action == .command(.open),
+                     "The palette should open on the selected chat with Open first")
+        precondition(!store.paletteEntries.contains { if case .chat = $0.action { true } else { false } },
+                     "Chats appear only once you type")
+        store.typeInPalette("billing")
+        precondition(store.paletteEntries.map(\.action) == [.chat(working.id)], "Typing a name should find the chat")
+        store.deleteInPalette()
+        precondition(store.palette?.query == "billin", "Delete should remove one character")
+        store.closePalette()
+
+        store.openPalette(choosingLater: true)
+        let times = store.paletteEntries
+        precondition(times.first?.title == "In an hour" && times.last?.action == .later(nil),
+                     "Later until should offer times, ending with no date")
+        store.closePalette()
+
+        precondition(store.deferSession(reply, until: now.addingTimeInterval(3_600)))
+        precondition(store.count(for: .later) == 1 && store.returnDate(for: reply.id) != nil)
+        store.ingest([reply, working], now: now.addingTimeInterval(1_800))
+        precondition(store.count(for: .later) == 1, "A chat stays in Later until its time")
+        store.ingest([reply, working], now: now.addingTimeInterval(3_700))
+        precondition(store.count(for: .later) == 0 && store.rows.first { $0.id == reply.id }?.needsReview == true,
+                     "A chat should come back from Later on time, marked unread")
     }
 
     private static func checkAttentionMarkers(now: Date) {

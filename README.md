@@ -11,6 +11,7 @@ The sidebar opens with one line per chat. Press **D** or use the preview button 
 | Shortcut | Action |
 | --- | --- |
 | ⌃⌥Space | Open or close the sidebar from any app. |
+| ⌘K, or ⌃⌥K from any app | Open the command palette. Type a chat’s name to switch to it, or a command to run it. Each command shows its key. |
 | / | Search the current list. |
 | 1–9 | Open rows 1–9 from top to bottom. |
 | 0 | Jump to any numbered row. Type the number, then press Return. |
@@ -18,15 +19,18 @@ The sidebar opens with one line per chat. Press **D** or use the preview button 
 | E | Archive the selected chat. |
 | L | Move the selected chat to Later, or back to All from the Later list. |
 | P | Pin the selected chat to the top, or unpin it. Up to three. |
+| H | Later until a time: in an hour, this evening, tomorrow morning or next week. The chat comes back by itself, marked unread. |
+| J / K | Move down or up, like ↓ and ↑. |
+| Z | Undo the last move. ⌘Z works too. |
 | ⌥↑ / ⌥↓ | Jump to the previous or next group. |
 | Tab | Switch between All and Later. |
 | ↵ on the Idle header | Show or hide idle chats. → shows them, ← hides them. |
 
-Single keys act on the list when Relay is open. While searching, they type into the query. See **Settings → Shortcuts** for shortcuts that work from other apps.
+Single keys act on the list when Relay is open. Letters are commands, so typing only searches after / or inside ⌘K. Opening Relay with a keyboard shortcut shows it instantly; hovering the pill grows it out of the edge. See **Settings → Shortcuts** for shortcuts that work from other apps.
 
 **All** groups chats by what the agent is doing: **Needs input**, **Finished**, **Working** and **Idle**, each newest first. Reading a chat never moves it: an unread chat has a bold title and a dot, and reading it only removes them. A chat moves only when its agent asks, finishes or starts a turn, or when you archive it, move it to Later or pin it. A finished chat you have read moves to Idle after eight hours without activity. **Pinned** chats sit above the groups in the order you pinned them, so ⌃⌥1–3 always open the same chats. Idle holds chats where nothing is happening: the agent is not working and not waiting on you. It starts folded so the chats that need you stay in view. Select its header and press Return, or click it, to show it, and Relay remembers your choice. Search always looks inside Idle. When nothing needs you, the list says so at the top. **Later** groups its chats the same way. Chats in Later stay out of the attention count and nudges until you move them back. The active tab stays selected between sidebar openings.
 
-Use Up and Down as soon as the sidebar opens, including on hover. The next chat to act on is selected when the sidebar opens, so Return opens it: a new input request first, then an unread reply. The bar under the list shows the keys for the selected chat. After you archive a chat or move it to Later, the same bar offers ⌘Z to undo it. Use ⌘U to mark read or unread. Escape exits search or closes the sidebar. Choose **Show Archive** from the Relay menu bar icon to browse archived chats. Right-click a chat there to restore it. Add a chat URL from the same menu bar icon.
+Use Up and Down as soon as the sidebar opens, including on hover. The next chat to act on is selected when the sidebar opens, so Return opens it: a new input request first, then an unread reply. The bar under the list shows the keys for the selected chat. After you archive a chat or move it to Later, the same bar offers Z to undo it. Use ⌘U to mark read or unread. Escape exits search or closes the sidebar. Choose **Show Archive** from the Relay menu bar icon to browse archived chats. Right-click a chat there to restore it. Add a chat URL from the same menu bar icon.
 
 A newly completed turn or input request produces a quiet edge nudge. The edge pill shows the number of chats that still need attention. Pending input requests count until they’re resolved or archived, even after you read them.
 

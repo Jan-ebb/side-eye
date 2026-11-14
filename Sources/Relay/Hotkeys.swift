@@ -7,6 +7,7 @@ enum Shortcut: Int, CaseIterable {
     case archive
     case jumpNumber
     case details
+    case palette
     case one = 1, two, three, four, five, six, seven, eight, nine
 
     static let numbers = one.rawValue...nine.rawValue
@@ -18,6 +19,7 @@ enum Shortcut: Int, CaseIterable {
         case .archive: kVK_ANSI_A
         case .jumpNumber: kVK_ANSI_0
         case .details: kVK_ANSI_D
+        case .palette: kVK_ANSI_K
         case .one: kVK_ANSI_1
         case .two: kVK_ANSI_2
         case .three: kVK_ANSI_3
@@ -37,6 +39,7 @@ enum Shortcut: Int, CaseIterable {
         case .archive: "A"
         case .jumpNumber: "0"
         case .details: "D"
+        case .palette: "K"
         default: String(rawValue)
         }
     }
