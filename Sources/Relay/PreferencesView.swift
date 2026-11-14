@@ -233,7 +233,7 @@ struct PreferencesView: View {
                 SettingsDivider()
                 shortcutRow("Later until a time", detail: "The chat comes back by itself, marked unread.", key: "H")
                 SettingsDivider()
-                shortcutRow("Add to or remove from Favorites", detail: "Or click the star on a chat.", key: "F")
+                shortcutRow("Star or unstar a chat", detail: "Starred chats stay put and appear under Favorites.", key: "F")
                 SettingsDivider()
                 shortcutRow("Search chats", key: "/")
                 SettingsDivider()

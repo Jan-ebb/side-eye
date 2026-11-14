@@ -3,7 +3,7 @@ import Foundation
 /// Everything the ⌘K palette can do. Each command shows its own key, so the palette teaches the shortcuts.
 enum PaletteCommand: String, CaseIterable {
     case open, archive, later, laterUntil, pin, read
-    case previews, idle, switchTab, archiveList, jump, search, undo, settings
+    case previews, idle, showAll, showFavorites, showLater, archiveList, jump, search, undo, settings
 }
 
 struct PaletteState: Equatable {
@@ -139,17 +139,20 @@ extension SessionStore {
             PaletteEntry(id: "target-" + command.rawValue, section: section, title: title, key: key,
                          icon: .symbol(symbol), action: .command(command), keywords: keywords)
         }
-        return [
+        var entries = [
             entry(.open, "Open", key: "↵", symbol: "arrow.up.right", keywords: "switch go"),
             entry(.archive, "Archive", key: "E", symbol: "archivebox", keywords: "done remove"),
             entry(.later, filter == .later ? "Move back to All" : "Move to Later", key: "L", symbol: "clock",
                   keywords: "snooze defer"),
             entry(.laterUntil, "Later until…", key: "H", symbol: "alarm", keywords: "snooze remind time"),
-            entry(.pin, isPinned(row.id) ? "Remove from Favorites" : "Add to Favorites", key: "F", symbol: "star",
-                  keywords: "favorite pin star keep top"),
             entry(.read, row.needsReview ? "Mark as read" : "Mark as unread", key: "⌘U", symbol: "circlebadge",
                   keywords: "unread seen"),
         ]
+        if filter != .later {
+            entries.insert(entry(.pin, isPinned(row.id) ? "Remove from Favorites" : "Add to Favorites", key: "F",
+                                 symbol: "star", keywords: "favorite pin star keep"), at: 4)
+        }
+        return entries
     }
 
     private var commandEntries: [PaletteEntry] {
@@ -163,13 +166,20 @@ extension SessionStore {
                   keywords: "summary briefing"),
             entry(.idle, quietCollapsed ? "Show idle chats" : "Hide idle chats", key: nil, symbol: "circle.dashed",
                   keywords: "quiet fold"),
-            entry(.switchTab, filter == .later ? "Go to All" : "Go to Later", key: "Tab", symbol: "tray",
-                  keywords: "tab list"),
             entry(.archiveList, "Show Archive", key: nil, symbol: "archivebox", keywords: "archived restore"),
             entry(.jump, "Jump to row", key: "0", symbol: "number", keywords: "number row go"),
             entry(.search, "Search chats", key: "/", symbol: "magnifyingglass", keywords: "find filter"),
             entry(.settings, "Settings", key: "⌘,", symbol: "gearshape", keywords: "preferences shortcuts"),
         ]
+        // The other tabs; the next one shows Tab, the key that gets there.
+        let tabs = SessionFilter.tabs
+        let next = tabs.firstIndex(of: filter).map { tabs[($0 + 1) % tabs.count] } ?? .all
+        let tabCommands: [(SessionFilter, PaletteCommand, String)] = [
+            (.all, .showAll, "tray.full"), (.favorites, .showFavorites, "star"), (.later, .showLater, "clock"),
+        ]
+        entries.insert(contentsOf: tabCommands.filter { $0.0 != filter }.map { tab, command, symbol in
+            entry(command, "Go to \(tab.label)", key: tab == next ? "Tab" : nil, symbol: symbol, keywords: "tab list")
+        }, at: 2)
         if canUndo {
             entries.insert(entry(.undo, "Undo", key: "Z", symbol: "arrow.uturn.backward", keywords: "back revert"),
                            at: 0)

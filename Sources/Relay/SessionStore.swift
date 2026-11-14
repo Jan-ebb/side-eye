@@ -2,15 +2,16 @@ import Foundation
 import Combine
 
 enum SessionFilter: CaseIterable, Hashable {
-    case all, needsInput, toReview, later, archive
+    case all, favorites, needsInput, toReview, later, archive
 
     // Needs input and To review are groups inside All rather than tabs. The filters stay for
     // the counts the pill and nudges use.
-    static let tabs: [SessionFilter] = [.all, .later]
+    static let tabs: [SessionFilter] = [.all, .favorites, .later]
 
     var label: String {
         switch self {
         case .all: "All"
+        case .favorites: "Favorites"
         case .needsInput: "Needs input"
         case .toReview: "To review"
         case .later: "Later"
@@ -23,7 +24,7 @@ enum SessionFilter: CaseIterable, Hashable {
         case .all: true
         case .needsInput: row.session.status == .needsInput
         case .toReview: row.session.status == .ready && row.needsReview
-        case .later, .archive: false
+        case .favorites, .later, .archive: false
         }
     }
 }
@@ -31,9 +32,8 @@ enum SessionFilter: CaseIterable, Hashable {
 /// Where a chat sits in All and Later. Groups follow what the agent is doing, never whether you
 /// have read it, so opening a chat changes how its row looks but not where it is.
 enum SessionGroup: Int, CaseIterable, Hashable {
-    case pinned, needsInput, finished, working, quiet
+    case needsInput, finished, working, quiet
 
-    /// The state group for a row. Pinned is chosen by the person, never derived.
     init(_ row: SessionRow) {
         switch row.session.status {
         case .needsInput: self = .needsInput
@@ -46,7 +46,6 @@ enum SessionGroup: Int, CaseIterable, Hashable {
 
     var label: String {
         switch self {
-        case .pinned: "Favorites"
         case .needsInput: "Needs input"
         case .finished: "Finished"
         case .working: "Working"
@@ -66,15 +65,12 @@ struct RowSection: Equatable {
 
 enum SidebarItem: Identifiable, Equatable {
     case allClear
-    /// Shown until the first favorite, so the feature is easy to find.
-    case favoritesHint
     case header(SessionGroup, count: Int, collapsed: Bool)
     case row(SessionRow, position: Int)
 
     var id: String {
         switch self {
         case .allClear: "all-clear"
-        case .favoritesHint: "favorites-hint"
         case .header(let group, _, _): group.headerID
         case .row(let row, _): row.id
         }
@@ -88,7 +84,6 @@ final class SessionStore: ObservableObject {
     private static let quietCollapsedPreferenceKey = "sidebarQuietCollapsed"
     private static let pinnedPreferenceKey = "pinnedSessionIDs"
     static let maxPins = 9
-    private static let usedFavoritesPreferenceKey = "usedFavorites"
     private static let staleAge: TimeInterval = 8 * 60 * 60
     @Published private(set) var rows: [SessionRow] = []
     @Published private var laterRows: [SessionRow] = []
@@ -103,8 +98,8 @@ final class SessionStore: ObservableObject {
     @Published private(set) var filter: SessionFilter = .all
     @Published private(set) var showsAllSummaries: Bool
     @Published private(set) var quietCollapsed: Bool
+    /// Favorites, in the order they were added. They stay in their groups in All and have their own tab.
     @Published private(set) var pinnedIDs: [String]
-    @Published private(set) var usedFavorites: Bool
     @Published private(set) var showsAutomationRuns: Bool
     @Published var numberEntry: String?
     /// The ⌘K palette while it is open.
@@ -123,6 +118,7 @@ final class SessionStore: ObservableObject {
     func count(for filter: SessionFilter) -> Int {
         if filter == .later { return laterRows.count }
         if filter == .archive { return archiveRows.count }
+        if filter == .favorites { return favoriteRows.count }
         return activeRows.lazy.filter(filter.includes).count
     }
 
@@ -133,7 +129,8 @@ final class SessionStore: ObservableObject {
     var sections: [RowSection] {
         var visible = matchingRows
         guard groupsRows else {
-            if filter != .archive, let nextAction = visible.indices.lazy
+            // Favorites keep the order you added them in, so their numbers never change.
+            if filter != .archive, filter != .favorites, let nextAction = visible.indices.lazy
                 .filter({ Self.needsAction(visible[$0]) })
                 .min(by: { Self.actionFirst(visible[$0], visible[$1]) }), nextAction > 0 {
                 let row = visible.remove(at: nextAction)
@@ -142,18 +139,9 @@ final class SessionStore: ObservableObject {
             return visible.isEmpty ? [] : [RowSection(group: nil, rows: visible, total: visible.count)]
         }
         var sections: [RowSection] = []
-        if filter == .all {
-            // Pins keep the order you pinned them in, so their numbers never change.
-            let pinned = pinnedIDs.compactMap { id in visible.first { $0.id == id } }
-            if !pinned.isEmpty {
-                sections.append(RowSection(group: .pinned, rows: pinned, total: pinned.count))
-                let ids = Set(pinned.map(\.id))
-                visible.removeAll { ids.contains($0.id) }
-            }
-        }
         // Dictionary(grouping:) keeps each group's rows in their incoming order, which Later relies on.
         let grouped = Dictionary(grouping: visible, by: SessionGroup.init)
-        for group in SessionGroup.allCases where group != .pinned {
+        for group in SessionGroup.allCases {
             guard let members = grouped[group], !members.isEmpty else { continue }
             let ordered = filter == .later ? members : members.sorted(by: order(within: group))
             let folded = group == .quiet && foldsQuiet && quietCollapsed
@@ -184,9 +172,6 @@ final class SessionStore: ObservableObject {
         if filter == .all, !isSearching, numberEntry == nil, !sections.isEmpty,
            !matchingRows.contains(where: Self.needsAction) {
             items.append(.allClear)
-        }
-        if filter == .all, !isSearching, numberEntry == nil, !usedFavorites, pinnedIDs.isEmpty, !sections.isEmpty {
-            items.append(.favoritesHint)
         }
         var position = 0
         for section in sections {
@@ -238,19 +223,22 @@ final class SessionStore: ObservableObject {
 
     func isPinned(_ id: String) -> Bool { pinnedIDs.contains(id) }
 
-    /// Adds a chat to Favorites at the top of All, or removes it. Returns nil when Favorites is full.
+    /// Favorites that are not in Later, in the order they were added.
+    private var favoriteRows: [SessionRow] {
+        pinnedIDs.compactMap { id in activeRows.first { $0.id == id } }
+    }
+
+    /// Stars a chat or removes its star. The chat stays where it is in All and appears in the
+    /// Favorites tab. Returns nil when Favorites is full.
     @discardableResult
     func togglePin(_ session: Session) -> Bool? {
         if let index = pinnedIDs.firstIndex(of: session.id) {
             pinnedIDs.remove(at: index)
         } else {
-            let live = pinnedIDs.filter { id in activeRows.contains { $0.id == id } }
+            // Forget favorites whose chats are gone, keeping ones resting in Later.
+            let live = pinnedIDs.filter { id in rows.contains { $0.id == id } }
             guard live.count < Self.maxPins else { return nil }
             pinnedIDs = live + [session.id]
-            if !usedFavorites {
-                usedFavorites = true
-                defaults?.set(true, forKey: Self.usedFavoritesPreferenceKey)
-            }
         }
         defaults?.set(pinnedIDs, forKey: Self.pinnedPreferenceKey)
         syncSelection()
@@ -264,6 +252,7 @@ final class SessionStore: ObservableObject {
         let scoped: [SessionRow]
         switch filter {
         case .all: scoped = activeRows
+        case .favorites: scoped = favoriteRows
         case .needsInput, .toReview: scoped = activeRows.filter(filter.includes)
         case .later: scoped = laterRows
         case .archive: scoped = archiveRows
@@ -370,7 +359,6 @@ final class SessionStore: ObservableObject {
         showsAllSummaries = defaults?.bool(forKey: Self.briefingPreferenceKey) ?? false
         quietCollapsed = defaults?.object(forKey: Self.quietCollapsedPreferenceKey) as? Bool ?? true
         pinnedIDs = defaults?.stringArray(forKey: Self.pinnedPreferenceKey) ?? []
-        usedFavorites = defaults?.bool(forKey: Self.usedFavoritesPreferenceKey) ?? false
         showsAutomationRuns = defaults?.bool(forKey: Self.automationRunsPreferenceKey) ?? false
         grokMainOnly = defaults?.bool(forKey: "grokMainAgentsOnly") ?? false
         mainGrokIDs = Set(defaults?.stringArray(forKey: "grokMainAgentIDs") ?? [])
