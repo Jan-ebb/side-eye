@@ -86,6 +86,10 @@ enum SelfChecks {
         let crowded = SessionStore(defaults: nil)
         crowded.ingest(many)
         precondition(crowded.rows.count == 13)
+        precondition(crowded.quietCollapsed && crowded.shownRows.isEmpty
+                     && crowded.sidebarItems == [.allClear, .header(.quiet, count: 13, collapsed: true)],
+                     "Quiet should start folded and say that nothing needs you")
+        crowded.setQuietCollapsed(false)
         precondition(Shortcut.numbers.compactMap { crowded.session(in: $0)?.id } == many.prefix(9).map(\.id))
         precondition(crowded.session(in: 10)?.id == "many-10")
         crowded.numberEntry = ""
@@ -102,6 +106,7 @@ enum SelfChecks {
         checkAttentionMarkers(now: now)
         checkLater(now: now)
         checkArchive(now: now)
+        checkGrouping(now: now)
 
         let ordered = SessionStore(defaults: nil)
         let older = sample("older", .codex, "Older completion", .ready, now,
@@ -156,7 +161,7 @@ enum SelfChecks {
         precondition(age.rows.first { $0.id == oldInput.id }?.statusLabel == "Needs input")
         checkRailPlacement()
         checkCodexAutomationVisibility(now: now)
-        print("Session checks passed (attention, Later, Archive, search, layouts, completion order, shortcuts, status age, Grok scope and summaries).")
+        print("Session checks passed (attention, Later, Archive, search, layouts, completion order, grouping, shortcuts, status age, Grok scope and summaries).")
         print("Rail placement checks passed.")
         print("Codex automation visibility checks passed.")
     }
@@ -406,6 +411,45 @@ enum SelfChecks {
         precondition(busy.numberEntry == nil && busy.selectedID == nil && busy.session(in: 1) == nil)
     }
 
+    private static func checkGrouping(now: Date) {
+        let store = SessionStore(defaults: nil)
+        let olderReply = sample("older-reply", .codex, "Older reply", .ready, now,
+                                completedAt: now.addingTimeInterval(-900))
+        let newerReply = sample("newer-reply", .cursor, "Newer reply", .ready, now,
+                                completedAt: now.addingTimeInterval(-60))
+        let input = sample("input", .claude, "Approve deploy", .needsInput, now.addingTimeInterval(-300))
+        let slowWorking = sample("slow", .codex, "Slow turn", .working, now.addingTimeInterval(-600))
+        let fastWorking = sample("fast", .claude, "Fast turn", .working, now.addingTimeInterval(-30))
+        let quiet = sample("quiet", .grok, "Quiet notes", .idle, now.addingTimeInterval(-3_600))
+        store.ingest([olderReply, newerReply, input, slowWorking, fastWorking, quiet], now: now)
+        precondition(store.sections.map(\.group) == [.needsInput, .toReview, .working, .quiet])
+        precondition(store.shownRows.map(\.id) == [input.id, newerReply.id, olderReply.id, fastWorking.id, slowWorking.id],
+                     "Groups should list their rows newest first and start with Quiet folded")
+        precondition(store.sidebarItems.first == .header(.needsInput, count: 1, collapsed: false)
+                     && store.sidebarItems.last == .header(.quiet, count: 1, collapsed: true))
+        precondition(store.nextActionID == input.id && store.session(in: 4)?.id == fastWorking.id)
+
+        store.selectedID = input.id
+        precondition(store.selectGroup(forward: true) && store.selectedID == newerReply.id)
+        precondition(store.selectGroup(forward: true) && store.selectedID == fastWorking.id)
+        precondition(!store.selectGroup(forward: true), "Folded Quiet has no row for Tab to land on")
+        precondition(store.selectGroup(forward: false) && store.selectedID == newerReply.id)
+
+        store.setQuery("notes")
+        precondition(store.shownRows.map(\.id) == [quiet.id], "Search should look inside folded Quiet")
+        store.setQuery(nil)
+        store.setQuietCollapsed(false)
+        precondition(store.shownRows.last?.id == quiet.id)
+
+        store.hide(input)
+        store.acknowledge(newerReply)
+        store.acknowledge(olderReply)
+        precondition(store.sidebarItems.first == .allClear && store.nextActionID == nil,
+                     "With nothing to act on, the list should say so first")
+        store.setQuietCollapsed(true)
+        precondition(store.shownRows.map(\.id) == [fastWorking.id, slowWorking.id])
+    }
+
     private static func checkAttentionMarkers(now: Date) {
         let store = SessionStore(defaults: nil)
         let input = sample("input", .claude, "Approve the update", .needsInput, now.addingTimeInterval(-5))
@@ -419,14 +463,16 @@ enum SelfChecks {
 
         precondition(store.nextActionID == input.id && store.attentionCount == 4)
         precondition(store.latestReplyID == readReply.id, "Latest reply should include read replies and fall back to their update time")
-        precondition(store.session(in: 1)?.id == input.id && store.session(in: 2)?.id == reply.id,
-                     "The next action should get shortcut 1 and leave the other rows in completion order")
+        precondition([input.id, earlierInput.id, flagged.id, reply.id].enumerated()
+                        .allSatisfy { store.session(in: $0.offset + 1)?.id == $0.element },
+                     "Rows should follow their groups: input requests, then replies newest first")
         store.markRead(input)
         precondition(store.nextActionID == earlierInput.id && store.session(in: 1)?.id == earlierInput.id
                      && store.attentionCount == 4)
         precondition(!store.isAttentionPending(for: input), "Reading pending input should still dismiss its nudge")
         store.acknowledge(earlierInput)
-        precondition(store.nextActionID == reply.id && store.nextAttention()?.id == reply.id)
+        precondition(store.nextActionID == input.id && store.nextAttention()?.id == reply.id,
+                     "A pending input request stays first even after it was read")
         store.markRead(reply)
         precondition(store.nextActionID == input.id && store.attentionCount == 3)
         precondition(store.nextAttention()?.id == flagged.id, "The global shortcut should still follow the unread queue")
@@ -466,8 +512,8 @@ enum SelfChecks {
         precondition(store.nextAttention()?.id == review.id && !store.isAttentionPending(for: input))
 
         store.setFilter(.later)
-        precondition(store.nextActionID == nil && store.session(in: 1)?.id == working.id
-                     && store.session(in: 2)?.id == input.id)
+        precondition(store.nextActionID == nil && store.session(in: 1)?.id == input.id
+                     && store.session(in: 2)?.id == working.id, "Later should group its rows like All")
         store.setQuery("")
         precondition(store.isSearching && store.query.isEmpty && store.shownRows.count == 2)
         store.setQuery("approval")
@@ -493,7 +539,10 @@ enum SelfChecks {
         precondition(saved.route == input.route && saved.status == .unknown && saved.stateSummary == nil)
         precondition(reloaded.toggleLater(saved) == false)
         reloaded.setFilter(.all)
-        precondition(reloaded.session(in: 1)?.id == input.id && reloaded.attentionCount == 0)
+        precondition(reloaded.session(in: 1) == nil && reloaded.attentionCount == 0,
+                     "A restored chat without a live status belongs in folded Quiet")
+        reloaded.setQuietCollapsed(false)
+        precondition(reloaded.session(in: 1)?.id == input.id)
         precondition(reloaded.undoHide() && reloaded.shownRows.isEmpty && reloaded.count(for: .later) == 2)
     }
 
@@ -567,6 +616,8 @@ enum SelfChecks {
                           stateSummary: position == 13 ? "The draft lists three invoices still to reconcile." : nil)
         }
         store.ingest(fixtures)
+        // The keyboard checks number the quiet rows too, so start with Quiet open.
+        store.setQuietCollapsed(false)
         Task {
             let previewDirectory = ProcessInfo.processInfo.environment["RELAY_PREVIEW_DIRECTORY"].map {
                 URL(fileURLWithPath: $0)

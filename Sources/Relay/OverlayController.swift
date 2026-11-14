@@ -140,6 +140,7 @@ final class OverlayController {
                                search: { [weak self] in self?.beginSearch() },
                                toggleLater: { [weak self] in self?.onLater?($0) },
                                restoreArchived: { [weak self] in self?.onRestoreArchived?($0) },
+                               undo: { [weak self] in self?.onUndo?() },
                                onHighlightRow: { [weak self] in self?.highlightRow($0) },
                                drawsSurface: false)
         let sidebarContent = HoverHost(rootView: list)
@@ -458,13 +459,16 @@ final class OverlayController {
         morph.hide()
     }
 
-    func report(_ message: String) {
+    /// Shows a short notice in the action bar. An undoable one offers ⌘Z beside it.
+    func report(_ message: String, undoable: Bool = false) {
         store.notice = message
+        store.noticeOffersUndo = undoable
         noticeTask?.cancel()
         noticeTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(3))
+            try? await Task.sleep(for: .seconds(undoable ? 5 : 3))
             guard !Task.isCancelled else { return }
             self?.store.notice = nil
+            self?.store.noticeOffersUndo = false
         }
         if !isShowing {
             queuedAttention = []
@@ -545,20 +549,28 @@ final class OverlayController {
         press("2", code: 19)
         precondition(openedID == "one", "The second number should open the second row")
         press("\t", code: 48)
-        precondition(store.filter == .needsInput && store.shownRows.map(\.id) == ["two"])
-        press("1", code: 18)
-        precondition(openedID == "two", "Numbering should start at one in Needs input")
+        precondition(store.filter == .all && store.selectedID == "three", "Tab should move to the next group")
         press("\t", code: 48)
-        precondition(store.filter == .toReview && store.shownRows.map(\.id) == ["one"])
+        precondition(store.filter == .all && store.selectedID == store.sections.last?.rows.first?.id,
+                     "Tab should reach the expanded Quiet group")
+        press("\t", code: 48)
+        precondition(store.filter == .later, "Tab past the last group should move on to Later")
+        press("\t", code: 48)
+        precondition(store.filter == .all && store.selectedID == "two")
+        press("\t", code: 48, flags: .shift)
+        precondition(store.filter == .later, "Shift-Tab from the first group should move back a tab")
+        store.setFilter(.all)
+        press("\u{f702}", code: 123)
+        precondition(store.quietCollapsed && !store.shownRows.contains { SessionGroup($0) == .quiet },
+                     "Left arrow should fold Quiet")
+        press("\u{f703}", code: 124)
+        precondition(!store.quietCollapsed, "Right arrow should open Quiet")
         press("0", code: 29)
         precondition(store.numberEntry == "", "0 should open the number picker inside Relay")
-        press("1", code: 18)
+        press("2", code: 19)
         press("\r", code: 36)
-        precondition(openedID == "one", "Number entry should use the active filter")
+        precondition(openedID == "one", "Number entry should follow the grouped order")
         press("\u{1b}", code: 53)
-        press("\t", code: 48, flags: .shift)
-        precondition(store.filter == .needsInput)
-        store.setFilter(.all)
         jumpByNumber()
         press("\u{f701}", code: 125)
         precondition(store.numberEntry == "1" && store.selectedID == "two")
@@ -628,7 +640,7 @@ final class OverlayController {
         store.setShowsAllSummaries(true)
         precondition(store.shownRows == originalRows, "Layout should preserve row order")
         precondition(OverlayMetrics.sidebarHeight(for: store) > compactHeight,
-                     "Compact should show less chrome and fit in a shorter panel")
+                     "Briefing adds a summary line under each row, so it needs a taller panel")
         precondition(sidebar.frame.maxX == compactFrame.maxX, "Both layouts must keep the pill's right edge")
         if let path = ProcessInfo.processInfo.environment["RELAY_PREVIEW_DIRECTORY"] {
             renderPreview(in: URL(fileURLWithPath: path).appendingPathComponent("briefing"))
@@ -762,8 +774,8 @@ final class OverlayController {
         guard isShowing else { return false }
 
         // The settings button and the drag start both share the rail's hit area.
-        let headerHeight = store.showsAllSummaries ? OverlayMetrics.headerHeight : OverlayMetrics.compactToolbarHeight
-        let settingsInset: CGFloat = store.showsAllSummaries ? 25 : 21
+        let headerHeight = OverlayMetrics.compactToolbarHeight
+        let settingsInset: CGFloat = 21
         let settings = CGPoint(x: sidebar.frame.maxX - OverlayMetrics.sidebarInset - settingsInset,
                                y: sidebar.frame.maxY - OverlayMetrics.sidebarInset - headerHeight / 2)
         if rail.frame.contains(settings) {
@@ -1117,11 +1129,16 @@ final class OverlayController {
         case 53:
             if store.isSearching { store.setQuery(nil) } else { close() }
         case 48:
+            // Tab walks the groups first, then moves on to the next tab.
+            let forward = !flags.contains(.shift)
+            guard !store.selectGroup(forward: forward) else { break }
             let filters = SessionFilter.tabs
             if let current = filters.firstIndex(of: store.filter) {
-                let direction = flags.contains(.shift) ? -1 : 1
-                store.setFilter(filters[(current + direction + filters.count) % filters.count])
+                store.setFilter(filters[(current + (forward ? 1 : -1) + filters.count) % filters.count])
             }
+        case 123, 124:
+            guard store.filter == .all, !store.isSearching else { return false }
+            store.setQuietCollapsed(event.keyCode == 123)
         case 36, 76:
             if let session = rows.first(where: { $0.id == store.selectedID })?.session { onOpen?(session) }
         case 51, 117:

@@ -4,7 +4,9 @@ import Combine
 enum SessionFilter: CaseIterable, Hashable {
     case all, needsInput, toReview, later, archive
 
-    static let tabs: [SessionFilter] = [.all, .needsInput, .toReview, .later]
+    // Needs input and To review are groups inside All rather than tabs. The filters stay for
+    // the counts the pill and nudges use.
+    static let tabs: [SessionFilter] = [.all, .later]
 
     var label: String {
         switch self {
@@ -26,10 +28,53 @@ enum SessionFilter: CaseIterable, Hashable {
     }
 }
 
+/// What a chat asks of you. All and Later show their rows under these headers, in this order.
+enum SessionGroup: Int, CaseIterable, Hashable {
+    case needsInput, toReview, working, quiet
+
+    init(_ row: SessionRow) {
+        if row.session.status == .needsInput { self = .needsInput }
+        else if row.needsReview { self = .toReview }
+        else if row.session.status == .working { self = .working }
+        else { self = .quiet }
+    }
+
+    var label: String {
+        switch self {
+        case .needsInput: "Needs input"
+        case .toReview: "To review"
+        case .working: "Working"
+        case .quiet: "Quiet"
+        }
+    }
+}
+
+struct RowSection: Equatable {
+    let group: SessionGroup?
+    let rows: [SessionRow]
+    let total: Int
+    var isCollapsed: Bool { rows.isEmpty && total > 0 }
+}
+
+enum SidebarItem: Identifiable, Equatable {
+    case allClear
+    case header(SessionGroup, count: Int, collapsed: Bool)
+    case row(SessionRow, position: Int)
+
+    var id: String {
+        switch self {
+        case .allClear: "all-clear"
+        case .header(let group, _, _): "group-\(group.rawValue)"
+        case .row(let row, _): row.id
+        }
+    }
+}
+
 @MainActor
 final class SessionStore: ObservableObject {
     nonisolated static let automationRunsPreferenceKey = "showsAutomationRuns"
     private static let briefingPreferenceKey = "sidebarUsesBriefing"
+    private static let quietCollapsedPreferenceKey = "sidebarQuietCollapsed"
     private static let staleAge: TimeInterval = 8 * 60 * 60
     @Published private(set) var rows: [SessionRow] = []
     @Published private var laterRows: [SessionRow] = []
@@ -39,9 +84,11 @@ final class SessionStore: ObservableObject {
     @Published var keyboardMode = false
     @Published var selectedID: String?
     @Published var notice: String?
+    @Published var noticeOffersUndo = false
     @Published private var searchQuery: String?
     @Published private(set) var filter: SessionFilter = .all
     @Published private(set) var showsAllSummaries: Bool
+    @Published private(set) var quietCollapsed: Bool
     @Published private(set) var showsAutomationRuns: Bool
     @Published var numberEntry: String?
     @Published private(set) var grokMainOnly = false
@@ -61,18 +108,82 @@ final class SessionStore: ObservableObject {
         return activeRows.lazy.filter(filter.includes).count
     }
 
-    var shownRows: [SessionRow] {
+    /// All and Later show their rows grouped by what they ask of you. Quiet folds away in All
+    /// until it's opened or a search needs it.
+    var groupsRows: Bool { filter == .all || filter == .later }
+
+    var sections: [RowSection] {
         var visible = matchingRows
-        guard filter != .later, filter != .archive else { return visible }
-        let nextAction = visible.indices.lazy.filter { Self.needsAction(visible[$0]) }.min { lhs, rhs in
-            Self.actionFirst(visible[lhs], visible[rhs])
+        guard groupsRows else {
+            if filter != .archive, let nextAction = visible.indices.lazy
+                .filter({ Self.needsAction(visible[$0]) })
+                .min(by: { Self.actionFirst(visible[$0], visible[$1]) }), nextAction > 0 {
+                let row = visible.remove(at: nextAction)
+                visible.insert(row, at: 0)
+            }
+            return visible.isEmpty ? [] : [RowSection(group: nil, rows: visible, total: visible.count)]
         }
-        if let nextAction, nextAction > 0 {
-            let row = visible.remove(at: nextAction)
-            visible.insert(row, at: 0)
+        // Dictionary(grouping:) keeps each group's rows in their incoming order, which Later relies on.
+        let grouped = Dictionary(grouping: visible, by: SessionGroup.init)
+        return SessionGroup.allCases.compactMap { group in
+            guard let members = grouped[group], !members.isEmpty else { return nil }
+            let ordered = filter == .later ? members : members.sorted(by: Self.order(within: group))
+            let folded = group == .quiet && filter == .all && quietCollapsed && !isSearching
+            return RowSection(group: group, rows: folded ? [] : ordered, total: ordered.count)
         }
-        return visible
     }
+
+    var shownRows: [SessionRow] { sections.flatMap(\.rows) }
+
+    /// The list as drawn: an all-clear line when nothing needs you, group headers and numbered rows.
+    var sidebarItems: [SidebarItem] {
+        let sections = self.sections
+        var items: [SidebarItem] = []
+        if filter == .all, !isSearching, numberEntry == nil, !sections.isEmpty,
+           !sections.contains(where: { $0.group == .needsInput || $0.group == .toReview }) {
+            items.append(.allClear)
+        }
+        var position = 0
+        for section in sections {
+            if let group = section.group {
+                items.append(.header(group, count: section.total, collapsed: section.isCollapsed))
+            }
+            for row in section.rows {
+                position += 1
+                items.append(.row(row, position: position))
+            }
+        }
+        return items
+    }
+
+    func setQuietCollapsed(_ value: Bool) {
+        guard value != quietCollapsed else { return }
+        quietCollapsed = value
+        defaults?.set(value, forKey: Self.quietCollapsedPreferenceKey)
+        syncSelection()
+        onRowsChanged?()
+    }
+
+    /// Moves the selection to the first row of the next or previous group. Returns false when
+    /// there is no group in that direction, so Tab can move on to the next tab.
+    @discardableResult
+    func selectGroup(forward: Bool) -> Bool {
+        guard groupsRows else { return false }
+        let sections = self.sections.filter { !$0.rows.isEmpty }
+        guard !sections.isEmpty else { return false }
+        let current = sections.firstIndex { section in section.rows.contains { $0.id == selectedID } }
+        let target: Int
+        if let current {
+            target = current + (forward ? 1 : -1)
+        } else {
+            target = forward ? 0 : sections.count - 1
+        }
+        guard sections.indices.contains(target) else { return false }
+        selectedID = sections[target].rows.first?.id
+        return true
+    }
+
+    var canUndo: Bool { lastChange != nil }
 
     private var matchingRows: [SessionRow] {
         let scoped: [SessionRow]
@@ -99,7 +210,7 @@ final class SessionStore: ObservableObject {
     }
 
     var latestReplyID: String? {
-        shownRows.lazy.map(\.session).filter { $0.status == .ready }.min { first, second in
+        matchingRows.lazy.map(\.session).filter { $0.status == .ready }.min { first, second in
             let firstReply = first.completedAt ?? first.updatedAt
             let secondReply = second.completedAt ?? second.updatedAt
             if firstReply != secondReply { return firstReply > secondReply }
@@ -173,6 +284,7 @@ final class SessionStore: ObservableObject {
     init(defaults: UserDefaults? = .standard) {
         self.defaults = defaults
         showsAllSummaries = defaults?.bool(forKey: Self.briefingPreferenceKey) ?? false
+        quietCollapsed = defaults?.object(forKey: Self.quietCollapsedPreferenceKey) as? Bool ?? true
         showsAutomationRuns = defaults?.bool(forKey: Self.automationRunsPreferenceKey) ?? false
         grokMainOnly = defaults?.bool(forKey: "grokMainAgentsOnly") ?? false
         mainGrokIDs = Set(defaults?.stringArray(forKey: "grokMainAgentIDs") ?? [])
@@ -573,6 +685,27 @@ final class SessionStore: ObservableObject {
         let second = actionPriority(b)
         if first != second { return first < second }
         return attentionFirst(a.session, b.session)
+    }
+
+    /// Newest first by the time the row shows. Needs input keeps unseen requests on top.
+    private static func order(within group: SessionGroup) -> (SessionRow, SessionRow) -> Bool {
+        if group == .needsInput { return actionFirst }
+        return { a, b in
+            let first = shownDate(a)
+            let second = shownDate(b)
+            return first != second ? first > second : a.id < b.id
+        }
+    }
+
+    /// The same moment the row's timestamp shows; rows without one sort last.
+    private static func shownDate(_ row: SessionRow) -> Date {
+        let session = row.session
+        switch session.status {
+        case .ready: return session.completedAt ?? session.updatedAt
+        case .idle: return max(session.updatedAt, session.completedAt ?? .distantPast)
+        case .unknown: return .distantPast
+        case .working, .needsInput: return session.updatedAt
+        }
     }
 
     private static func completionFirst(_ a: Session, _ b: Session) -> Bool {

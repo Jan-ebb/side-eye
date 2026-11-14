@@ -199,12 +199,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func hide(_ session: Session) {
         store.hide(session)
         overlay?.clearAttentionNudge()
-        overlay?.report("Session archived")
+        overlay?.report("Archived “\(session.title)”", undoable: true)
     }
 
     private func toggleLater(_ session: Session) {
         guard let deferred = store.toggleLater(session) else { return }
-        overlay?.report(deferred ? "Moved to Later" : "Moved back to All")
+        overlay?.report(deferred ? "Moved “\(session.title)” to Later" : "Moved “\(session.title)” back to All",
+                        undoable: true)
     }
 
     private func restoreArchived(_ session: Session) {

@@ -4,7 +4,7 @@ Relay is a native macOS menu bar app for keeping parallel agent conversations wi
 
 Drag the edge pill up or down to dock it at a different height. Relay saves its position on each display. Hover to grow the pill into the sidebar, and move away to shrink it back. Relay uses native Force Touch feedback on reveal and after a drag settles. Its animations follow the system Reduce Motion setting.
 
-The sidebar opens in **Compact**, with one line per chat and a short summary for **Up next** when available. Press **D** or use the layout button to switch to **Briefing**, which shows a summary on each row. Relay remembers the layout you choose.
+The sidebar opens in **Compact**, with one line per chat and a short summary for **Up next** when available. Press **D** or use the layout button to switch to **Briefing**, which adds a summary line under each row. Relay remembers the layout you choose.
 
 ## Switching
 
@@ -17,16 +17,18 @@ The sidebar opens in **Compact**, with one line per chat and a short summary for
 | D | Switch between Compact and Briefing. |
 | E | Archive the selected chat. |
 | L | Move the selected chat to Later, or back to All from the Later list. |
+| Tab | Move to the next group, then on to Later. Shift-Tab goes back. |
+| → / ← | Show or hide quiet chats. |
 
 Single keys act on the list when Relay is open. While searching, they type into the query. See **Settings → Shortcuts** for shortcuts that work from other apps.
 
-Choose **All**, **Needs input**, **To review**, or **Later** above the list. Use Tab or Shift-Tab to cycle through the filters. **Needs input** shows chats still waiting for you, including ones you’ve read. **To review** shows unread completed replies. Chats in **Later** stay out of the attention count and nudges until you move them back. The active filter stays selected between sidebar openings.
+**All** groups chats by what they ask of you: **Needs input**, **To review**, **Working** and **Quiet**, each newest first. Quiet starts folded so the chats that need you stay in view; click its header or press → to show it, and Relay remembers your choice. Search always looks inside Quiet. When nothing needs you, the list says so at the top. **Later** groups its chats the same way. Chats in Later stay out of the attention count and nudges until you move them back. The active tab stays selected between sidebar openings.
 
-Use Up and Down as soon as the sidebar opens, including on hover. Return opens the highlighted chat. Hover over a row to see its shortcuts. Use ⌘Z to undo the last move and ⌘U to mark read or unread. Escape exits search or closes the sidebar. Choose **Show Archive** from the Relay menu bar icon to browse archived chats. Right-click a chat there to restore it. Add a chat URL from the same menu bar icon.
+Use Up and Down as soon as the sidebar opens, including on hover. The next chat to act on is selected when the sidebar opens, so Return opens it. The bar under the list shows the keys for the selected chat. After you archive a chat or move it to Later, the same bar offers ⌘Z to undo it. Use ⌘U to mark read or unread. Escape exits search or closes the sidebar. Choose **Show Archive** from the Relay menu bar icon to browse archived chats. Right-click a chat there to restore it. Add a chat URL from the same menu bar icon.
 
 A newly completed turn or input request produces a quiet edge nudge. The edge pill shows the number of chats that still need attention. Pending input requests count until they’re resolved or archived, even after you read them.
 
-The sidebar puts the next chat that needs your attention at the top, followed by the remaining chats in completion order. Row numbers follow the displayed order. Finished rows show the age of their last completion. Other rows show the age of their latest reported activity. Hover on a row to see the full local date and time and its summary when available.
+Row numbers follow the displayed order, so 1 is always the next chat to act on. Rows in folded Quiet have no number until you show them. Finished rows show the age of their last completion. Other rows show the age of their latest reported activity. Hover on a row to see its status, the full local date and time and its summary when available.
 
 **To review** marks a result to open. **Needs input** stays visible while a decision or answer is pending. **Working** marks an active turn reported by the source. **Quiet** means the source has reported no new update or request, and **Inactive** marks quiet sessions with eight hours without reported activity. **Read** means you opened an update in Relay, marked it read, or its source marked it read. A dot marks unread activity on rows with another status.
 
