@@ -771,13 +771,12 @@ struct SidebarView: View {
         // Status shows once per view, always in words: the Inbox has its group bands; flat lists
         // (Favorites, Later and search results) write it on the row, since an icon alone needs a legend.
         let stateLabel = store.groupsRows || browsingArchive ? nil : row.shortState
-        // Later is about when a chat comes back, so every row there says when.
-        let returnDate = store.filter == .later ? store.returnDate(for: row.id) : nil
+        // In Later, a chat with a return time shows it beside an alarm. One saved without a time keeps
+        // its usual timestamp, so no row is left without one.
         let returnLabel = store.filter == .later
-            ? returnDate.map { Self.returnLabel($0, now: now) } ?? "No date" : nil
+            ? store.returnDate(for: row.id).map { Self.returnLabel($0, now: now) } : nil
         return SidebarRow(row: row, position: position, isNext: isNext, preview: preview, stateLabel: stateLabel,
-                          returnLabel: returnLabel, returnsByItself: returnDate != nil,
-                          isFavorite: store.isPinned(row.id),
+                          returnLabel: returnLabel, isFavorite: store.isPinned(row.id),
                           canFavorite: canFavorite && !jumping,
                           toggleFavorite: { togglePin(row.session) },
                           jumping: jumping, searching: store.isSearching,
@@ -1237,10 +1236,8 @@ private struct SidebarRow: View {
     let isNext: Bool
     let preview: RowPreview?
     let stateLabel: String?
-    /// In Later: when the chat comes back, or that it has no date.
+    /// In Later, for a chat with a return time: when it comes back.
     let returnLabel: String?
-    /// True when the chat in Later has a time and returns without you.
-    let returnsByItself: Bool
     let isFavorite: Bool
     let canFavorite: Bool
     let toggleFavorite: () -> Void
@@ -1304,16 +1301,11 @@ private struct SidebarRow: View {
                     if !jumping {
                         ZStack(alignment: .trailing) {
                             if let returnLabel {
-                                Group {
-                                    if returnsByItself {
-                                        Label(returnLabel, systemImage: "alarm").labelStyle(.titleAndIcon)
-                                    } else {
-                                        Text(returnLabel)
-                                    }
-                                }
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(returnsByItself ? colors.secondary : colors.tertiary)
-                                .fixedSize()
+                                Label(returnLabel, systemImage: "alarm")
+                                    .labelStyle(.titleAndIcon)
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundStyle(colors.secondary)
+                                    .fixedSize()
                             } else if let timestamp = row.timestamp {
                                 RowTimestamp(date: timestamp, now: now, colors: colors)
                             }
