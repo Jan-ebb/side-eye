@@ -185,6 +185,20 @@ struct GroupGlyph: View {
     let group: SessionGroup
     let colors: OverlayColors
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var turning = false
+
+    /// Each status has one color, used by its glyph, its header and its unread dots.
+    static func tint(_ group: SessionGroup, _ colors: OverlayColors) -> Color {
+        switch group {
+        case .needsInput: colors.input
+        case .finished: colors.review
+        case .working: colors.working
+        case .pinned: colors.secondary
+        case .quiet: colors.tertiary
+        }
+    }
+
     var body: some View {
         ZStack {
             switch group {
@@ -196,8 +210,13 @@ struct GroupGlyph: View {
                 Circle().strokeBorder(lineWidth: 1.5)
                 Circle().frame(width: 4.8, height: 4.8)
             case .working:
+                // A slow turn says the agent is busy; Reduce Motion keeps it still.
                 Circle().strokeBorder(lineWidth: 1.5)
                 HalfDisc().frame(width: 6.8, height: 6.8)
+                    .rotationEffect(.degrees(turning ? 360 : 0))
+                    .animation(reduceMotion ? nil : .linear(duration: 2.4).repeatForever(autoreverses: false),
+                               value: turning)
+                    .onAppear { if !reduceMotion { turning = true } }
             case .quiet:
                 Circle().inset(by: 0.75).stroke(style: StrokeStyle(lineWidth: 1.5, dash: [2.2, 2.2]))
             case .pinned:
@@ -206,18 +225,9 @@ struct GroupGlyph: View {
                     .rotationEffect(.degrees(45))
             }
         }
-        .foregroundStyle(tint)
+        .foregroundStyle(Self.tint(group, colors))
         .frame(width: OverlayMetrics.sourceIconSize, height: OverlayMetrics.sourceIconSize)
         .accessibilityHidden(true)
-    }
-
-    private var tint: Color {
-        switch group {
-        case .needsInput: colors.input
-        case .finished: colors.review
-        case .working, .pinned: colors.secondary
-        case .quiet: colors.tertiary
-        }
     }
 }
 
@@ -706,7 +716,7 @@ struct SidebarView: View {
             HStack(spacing: 6) {
                 Text(group.label)
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(colors.secondary)
+                    .foregroundStyle(group == .pinned || group == .quiet ? colors.secondary : GroupGlyph.tint(group, colors))
                 Text(String(count))
                     .font(.system(size: 12, weight: .medium).monospacedDigit())
                     .foregroundStyle(colors.tertiary)
@@ -1011,8 +1021,10 @@ private struct SidebarRow: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     // Unread is a bold title and a dot. Reading changes how the row looks, not where it is.
                     if row.needsReview {
+                        // The dot takes its status color, so rows are color-coded too.
+                        let group = SessionGroup(row)
                         Circle()
-                            .fill(colors.accent)
+                            .fill(group == .quiet ? colors.secondary : GroupGlyph.tint(group, colors))
                             .frame(width: 6, height: 6)
                             .accessibilityHidden(true)
                     }

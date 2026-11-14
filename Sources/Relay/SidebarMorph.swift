@@ -26,7 +26,7 @@ final class SidebarMorph {
     enum Motion {
         case opening, retraction
 
-        var duration: TimeInterval { self == .opening ? 0.240 : 0.100 }
+        var duration: TimeInterval { self == .opening ? 0.180 : 0.100 }
 
         var easing: CAMediaTimingFunction {
             switch self {
