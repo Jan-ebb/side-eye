@@ -106,6 +106,7 @@ enum SelfChecks {
         checkAttentionMarkers(now: now)
         checkLater(now: now)
         checkArchive(now: now)
+        checkArchiveReturns(now: now)
         checkGrouping(now: now)
         checkPalette(now: now)
 
@@ -623,6 +624,34 @@ enum SelfChecks {
         reloaded.setQuietCollapsed(false)
         precondition(reloaded.session(in: 1)?.id == input.id)
         precondition(reloaded.undoHide() && reloaded.shownRows.isEmpty && reloaded.count(for: .later) == 2)
+    }
+
+    private static func checkArchiveReturns(now: Date) {
+        let store = SessionStore(defaults: nil)
+        let project = sample("cursor:bc-project", .cursor, "Personal website", .ready, now,
+                             completedAt: now.addingTimeInterval(-600))
+        let quiet = sample("quiet", .codex, "Quiet chat", .idle, now)
+        store.ingest([project, quiet], now: now)
+        store.hide(project)
+        store.hide(quiet)
+        precondition(store.count(for: .archive) == 2 && store.rows.isEmpty)
+
+        let later = now.addingTimeInterval(3_600)
+        let touched = sample(quiet.id, .codex, quiet.title, .idle, later)
+        store.ingest([project, touched], now: later)
+        precondition(store.count(for: .archive) == 2, "Rescanning or touching a chat must not bring it back")
+
+        let finished = sample(project.id, .cursor, project.title, .ready, later, activityID: "turn-2",
+                              completedAt: later)
+        store.ingest([finished, touched], now: later)
+        precondition(store.count(for: .archive) == 1 && store.rows.map(\.id) == [project.id]
+                     && store.rows.first?.needsReview == true,
+                     "A new finished turn should bring an archived chat back, unread")
+
+        let asking = sample(quiet.id, .codex, quiet.title, .needsInput, later.addingTimeInterval(60))
+        store.ingest([finished, asking], now: later.addingTimeInterval(60))
+        precondition(store.count(for: .archive) == 0 && store.rows.count == 2,
+                     "An agent asking for input should bring its chat back")
     }
 
     private static func checkArchive(now: Date) {

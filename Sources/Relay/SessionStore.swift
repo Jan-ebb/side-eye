@@ -410,6 +410,13 @@ final class SessionStore: ObservableObject {
         }
 
         history.completions = completions.isEmpty ? nil : completions
+        // Like mail, an archived chat comes back when its agent does something new. Cursor projects and
+        // long-lived agents reuse one chat, so without this their new work would stay in Archive.
+        for (id, archivedAt) in history.dismissed {
+            guard let session = combined[id], Self.hasActivity(session, after: archivedAt) else { continue }
+            history.dismissed.removeValue(forKey: id)
+            if case .archive(let last) = lastChange, last == id { lastChange = nil }
+        }
         for id in history.dismissed.keys where history.savedSessions?[id] == nil {
             if let session = combined[id] {
                 saveSession(SavedSession(snapshot: Self.snapshot(of: session), deferredAt: nil), id: id)
@@ -780,6 +787,16 @@ final class SessionStore: ObservableObject {
         guard history.dismissed[session.id] == nil, session.source.isEnabled(in: defaults),
               showsAutomationRuns || session.isAutomationRun != true else { return false }
         return session.source != .grok || !grokMainOnly || mainGrokIDs.contains(session.id)
+    }
+
+    /// A new turn finished, started or asked for you after the given date. Timestamps alone don't count,
+    /// so an idle chat whose file was touched stays archived.
+    static func hasActivity(_ session: Session, after date: Date) -> Bool {
+        switch session.status {
+        case .ready: (session.completedAt ?? .distantPast) > date
+        case .needsInput, .working: session.updatedAt > date
+        case .idle, .unknown: false
+        }
     }
 
     private static func needsAction(_ row: SessionRow) -> Bool {
