@@ -741,6 +741,9 @@ struct SidebarView: View {
                 .padding(.bottom, OverlayMetrics.listInset)
             }
             .scrollBounceBehavior(.basedOnSize)
+            // A permanent scroll bar (mouse attached, or "always show") takes a gutter that cuts the group
+            // bands short of the edge. Row numbers and pinned bands already say where you are.
+            .scrollIndicators(.never)
             .onChange(of: keyboardTarget, initial: true) { _, id in
                 if let id { proxy.scrollTo(id) }
             }
