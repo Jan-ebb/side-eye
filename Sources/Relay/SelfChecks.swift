@@ -87,8 +87,8 @@ enum SelfChecks {
         crowded.ingest(many)
         precondition(crowded.rows.count == 13)
         precondition(crowded.quietCollapsed && crowded.shownRows.isEmpty
-                     && crowded.sidebarItems == [.allClear, .header(.quiet, count: 13, collapsed: true)],
-                     "Quiet should start folded and say that nothing needs you")
+                     && crowded.sidebarItems == [.allClear, .favoritesHint, .header(.quiet, count: 13, collapsed: true)],
+                     "Quiet should start folded, say that nothing needs you and offer Favorites")
         crowded.setQuietCollapsed(false)
         precondition(Shortcut.numbers.compactMap { crowded.session(in: $0)?.id } == many.prefix(9).map(\.id))
         precondition(crowded.session(in: 10)?.id == "many-10")
@@ -427,8 +427,9 @@ enum SelfChecks {
         precondition(store.sections.map(\.group) == [.needsInput, .finished, .working, .quiet])
         precondition(store.shownRows.map(\.id) == [input.id, newerReply.id, olderReply.id, fastWorking.id, slowWorking.id],
                      "Groups should list their rows newest first and start with Quiet folded")
-        precondition(store.sidebarItems.first == .header(.needsInput, count: 1, collapsed: false)
-                     && store.sidebarItems.last == .header(.quiet, count: 1, collapsed: true))
+        precondition(store.sidebarItems.prefix(2) == [.favoritesHint, .header(.needsInput, count: 1, collapsed: false)]
+                     && store.sidebarItems.last == .header(.quiet, count: 1, collapsed: true),
+                     "Favorites should introduce itself until the first one is added")
         precondition(store.nextActionID == input.id && store.session(in: 4)?.id == fastWorking.id)
 
         let order = store.shownRows.map(\.id)
@@ -464,9 +465,19 @@ enum SelfChecks {
         precondition(store.togglePin(slowWorking) == true && store.togglePin(quiet) == true && store.togglePin(input) == true)
         precondition(store.sections.first?.group == .pinned
                      && (1...3).compactMap { store.session(in: $0)?.id } == [slowWorking.id, quiet.id, input.id],
-                     "Pins should sit on top in the order they were pinned")
-        precondition(store.togglePin(olderReply) == nil, "Pins should stop at three")
+                     "Favorites should sit on top in the order they were added")
+        precondition(store.usedFavorites && !store.sidebarItems.contains(.favoritesHint),
+                     "The Favorites hint should go away once you add one")
         precondition(store.togglePin(quiet) == false && !store.isPinned(quiet.id))
+
+        let full = SessionStore(defaults: nil)
+        let chats = (1...(SessionStore.maxPins + 1)).map {
+            sample("favorite-\($0)", .codex, "Chat \($0)", .ready, now.addingTimeInterval(-Double($0)))
+        }
+        full.ingest(chats, now: now)
+        precondition(chats.prefix(SessionStore.maxPins).allSatisfy { full.togglePin($0) == true }
+                     && full.togglePin(chats[SessionStore.maxPins]) == nil,
+                     "Favorites should stop at \(SessionStore.maxPins)")
         store.togglePin(slowWorking)
         store.togglePin(input)
 

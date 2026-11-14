@@ -145,7 +145,8 @@ extension SessionStore {
             entry(.later, filter == .later ? "Move back to All" : "Move to Later", key: "L", symbol: "clock",
                   keywords: "snooze defer"),
             entry(.laterUntil, "Later until…", key: "H", symbol: "alarm", keywords: "snooze remind time"),
-            entry(.pin, isPinned(row.id) ? "Unpin" : "Pin to top", key: "P", symbol: "pin", keywords: "top keep"),
+            entry(.pin, isPinned(row.id) ? "Remove from Favorites" : "Add to Favorites", key: "F", symbol: "star",
+                  keywords: "favorite pin star keep top"),
             entry(.read, row.needsReview ? "Mark as read" : "Mark as unread", key: "⌘U", symbol: "circlebadge",
                   keywords: "unread seen"),
         ]

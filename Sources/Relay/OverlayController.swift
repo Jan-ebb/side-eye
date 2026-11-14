@@ -596,14 +596,14 @@ final class OverlayController {
         store.selectedID = "three"
         press("\u{f702}", code: 123)
         precondition(!store.quietCollapsed, "← away from Quiet should do nothing")
-        press("p", code: 35)
+        press("f", code: 3)
         precondition(store.sections.first?.group == .pinned && store.session(in: 1)?.id == "three",
-                     "P should pin the selected chat to the top")
+                     "F should add the selected chat to Favorites")
         press("p", code: 35)
-        precondition(store.sections.first?.group != .pinned && !store.isPinned("three"))
+        precondition(store.sections.first?.group != .pinned && !store.isPinned("three"), "P should still work")
         press("k", code: 40, flags: .command)
         precondition(store.palette != nil && store.paletteTarget?.id == "three", "⌘K should open the palette on the selection")
-        for (character, code) in [("p", 35), ("i", 34), ("n", 45)] { press(character, code: UInt16(code)) }
+        for (character, code) in [("f", 3), ("a", 0), ("v", 9)] { press(character, code: UInt16(code)) }
         precondition(store.selectedPaletteEntry?.action == .command(.pin), "Typing should filter the palette")
         press("\r", code: 36)
         precondition(store.palette == nil && store.isPinned("three"), "↵ should run the chosen command and close")
@@ -1232,7 +1232,7 @@ final class OverlayController {
                         else { onLater?(target) }
                     }
                     return true
-                case "p":
+                case "f", "p":
                     if store.filter != .archive, !event.isARepeat, let target = store.removeTarget(allowSelection: true) {
                         togglePin(target)
                     }
@@ -1330,9 +1330,9 @@ final class OverlayController {
 
     func togglePin(_ session: Session) {
         switch store.togglePin(session) {
-        case true?: report("Pinned “\(session.title)” to the top")
-        case false?: report("Unpinned “\(session.title)”")
-        case nil: report("You can pin up to \(SessionStore.maxPins) chats")
+        case true?: report("Added “\(session.title)” to Favorites")
+        case false?: report("Removed “\(session.title)” from Favorites")
+        case nil: report("Favorites holds up to \(SessionStore.maxPins) chats")
         }
     }
 
