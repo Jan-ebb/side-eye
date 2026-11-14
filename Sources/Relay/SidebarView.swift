@@ -192,7 +192,7 @@ struct GroupGlyph: View {
                 Circle().strokeBorder(lineWidth: 1.5)
                 Capsule().frame(width: 1.5, height: 3.6).offset(y: -0.9)
                 Circle().frame(width: 1.7, height: 1.7).offset(y: 2.6)
-            case .toReview:
+            case .finished:
                 Circle().strokeBorder(lineWidth: 1.5)
                 Circle().frame(width: 4.8, height: 4.8)
             case .working:
@@ -200,6 +200,10 @@ struct GroupGlyph: View {
                 HalfDisc().frame(width: 6.8, height: 6.8)
             case .quiet:
                 Circle().inset(by: 0.75).stroke(style: StrokeStyle(lineWidth: 1.5, dash: [2.2, 2.2]))
+            case .pinned:
+                Image(systemName: "pin.fill")
+                    .font(.system(size: 9, weight: .semibold))
+                    .rotationEffect(.degrees(45))
             }
         }
         .foregroundStyle(tint)
@@ -210,8 +214,8 @@ struct GroupGlyph: View {
     private var tint: Color {
         switch group {
         case .needsInput: colors.input
-        case .toReview: colors.review
-        case .working: colors.secondary
+        case .finished: colors.review
+        case .working, .pinned: colors.secondary
         case .quiet: colors.tertiary
         }
     }
@@ -433,6 +437,7 @@ struct SidebarView: View {
     let toggleLater: (Session) -> Void
     let restoreArchived: (Session) -> Void
     var undo: () -> Void = {}
+    var togglePin: (Session) -> Void = { _ in }
     var onHighlightRow: ((String) -> Void)? = nil
     var drawsSurface = true
     var presentation = 0
@@ -679,7 +684,9 @@ struct SidebarView: View {
         let pointerSelected = !jumping && !store.keyboardMode && store.selectedID == row.id
         let preview = OverlayMetrics.preview(for: row, in: store)
         let hasActions = !browsingArchive && !jumping && !store.isSearching && store.selectedID == row.id
-        return SidebarRow(row: row, position: position, isNext: isNext, preview: preview,
+        // Pinned rows leave their group, so they carry its glyph themselves.
+        let stateGlyph = store.filter == .all && store.isPinned(row.id) ? SessionGroup(row) : nil
+        return SidebarRow(row: row, position: position, isNext: isNext, preview: preview, stateGlyph: stateGlyph,
                           jumping: jumping, searching: store.isSearching,
                           keyboardSelected: keyboardSelected, selected: keyboardSelected || pointerSelected,
                           showsMainChip: isMain && (jumping || store.showsAllSummaries),
@@ -715,12 +722,15 @@ struct SidebarView: View {
         .padding(.leading, OverlayMetrics.rowInset + numberWidth + OverlayMetrics.rowSpacing)
         .padding(.trailing, OverlayMetrics.rowInset)
         .frame(height: OverlayMetrics.groupHeaderHeight)
+        .background(foldable && store.selectedID == group.headerID && store.keyboardMode ? colors.selection : .clear,
+                    in: RoundedRectangle(cornerRadius: 5))
         .contentShape(Rectangle())
+        .id(group.headerID)
         return Group {
             if foldable {
                 Button { store.setQuietCollapsed(!collapsed) } label: { content }
                     .buttonStyle(.plain)
-                    .help(collapsed ? "Show quiet chats (→)" : "Hide quiet chats (←)")
+                    .help(collapsed ? "Show quiet chats (select and press ↵)" : "Hide quiet chats (select and press ↵)")
                     .accessibilityLabel("\(group.label), \(count)")
                     .accessibilityValue(collapsed ? "Collapsed" : "Expanded")
                     .accessibilityHint(collapsed ? "Shows quiet chats" : "Hides quiet chats")
@@ -773,6 +783,10 @@ struct SidebarView: View {
                        systemImage: isMain ? "star.slash" : "star") {
                     store.toggleGrokMain(id: row.id)
                 }
+            }
+            Button(store.isPinned(row.id) ? "Unpin" : "Pin to top",
+                   systemImage: store.isPinned(row.id) ? "pin.slash" : "pin") {
+                togglePin(row.session)
             }
             Button(store.filter == .later ? "Move back" : "Move to Later",
                    systemImage: store.filter == .later ? "arrow.uturn.backward" : "clock") {
@@ -890,7 +904,11 @@ struct SidebarView: View {
                           accessibilityHint: "Slash", action: search)
                     .help("Press / to search, or 0 to jump to a row number")
                 Spacer(minLength: 0)
-                if let selected {
+                if store.isQuietHeaderSelected {
+                    let collapsed = store.quietCollapsed
+                    barButton(collapsed ? "Show quiet" : "Hide quiet", key: "↵", prominent: true,
+                              accessibilityHint: "Return") { store.setQuietCollapsed(!collapsed) }
+                } else if let selected {
                     if !browsingArchive {
                         barButton(laterActionLabel, key: "L", accessibilityHint: "L") { toggleLater(selected.session) }
                         barButton("Archive", key: "E", accessibilityHint: "E") { hide(selected.session) }
@@ -953,6 +971,7 @@ private struct SidebarRow: View {
     let position: Int
     let isNext: Bool
     let preview: RowPreview?
+    let stateGlyph: SessionGroup?
     let jumping: Bool
     let searching: Bool
     let keyboardSelected: Bool
@@ -990,10 +1009,15 @@ private struct SidebarRow: View {
                         .accessibilityHidden(true)
                     title
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    if row.showsUnreadDot {
+                    // Unread is a bold title and a dot. Reading changes how the row looks, not where it is.
+                    if row.needsReview {
                         Circle()
-                            .fill(colors.secondary)
-                            .frame(width: 4, height: 4)
+                            .fill(colors.accent)
+                            .frame(width: 6, height: 6)
+                            .accessibilityHidden(true)
+                    }
+                    if let stateGlyph {
+                        GroupGlyph(group: stateGlyph, colors: colors)
                     }
                     if !jumping {
                         ZStack(alignment: .trailing) {
@@ -1041,7 +1065,7 @@ private struct SidebarRow: View {
             .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n"))
         .accessibilityLabel(session.title)
         .accessibilityValue([session.source.name, isMain ? "Main agent" : nil, row.stateTitle,
-                             isNext ? "Next to act on" : nil, row.showsUnreadDot ? "Unread" : nil,
+                             isNext ? "Next to act on" : nil, row.needsReview ? "Unread" : nil,
                              row.timestampDescription, session.stateSummary,
                              jumping || searching ? "Row \(position)" : "Shortcut \(numberShortcut)"]
             .compactMap { $0 }.joined(separator: ", "))
@@ -1054,7 +1078,7 @@ private struct SidebarRow: View {
                 .frame(width: OverlayMetrics.sourceIconSize, height: OverlayMetrics.sourceIconSize)
                 .accessibilityHidden(true)
             Text(session.title)
-                .font(.system(size: 14, weight: isNext && !jumping ? .semibold : .medium))
+                .font(.system(size: 14, weight: row.needsReview ? .semibold : .medium))
                 .foregroundStyle(row.isStale ? colors.secondary : colors.primary)
                 .lineLimit(1)
                 .truncationMode(.tail)

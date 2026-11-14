@@ -421,33 +421,58 @@ enum SelfChecks {
         let slowWorking = sample("slow", .codex, "Slow turn", .working, now.addingTimeInterval(-600))
         let fastWorking = sample("fast", .claude, "Fast turn", .working, now.addingTimeInterval(-30))
         let quiet = sample("quiet", .grok, "Quiet notes", .idle, now.addingTimeInterval(-3_600))
-        store.ingest([olderReply, newerReply, input, slowWorking, fastWorking, quiet], now: now)
-        precondition(store.sections.map(\.group) == [.needsInput, .toReview, .working, .quiet])
+        let fixtures = [olderReply, newerReply, input, slowWorking, fastWorking, quiet]
+        store.ingest(fixtures, now: now)
+        precondition(store.sections.map(\.group) == [.needsInput, .finished, .working, .quiet])
         precondition(store.shownRows.map(\.id) == [input.id, newerReply.id, olderReply.id, fastWorking.id, slowWorking.id],
                      "Groups should list their rows newest first and start with Quiet folded")
         precondition(store.sidebarItems.first == .header(.needsInput, count: 1, collapsed: false)
                      && store.sidebarItems.last == .header(.quiet, count: 1, collapsed: true))
         precondition(store.nextActionID == input.id && store.session(in: 4)?.id == fastWorking.id)
 
+        let order = store.shownRows.map(\.id)
+        store.acknowledge(newerReply)
+        precondition(store.shownRows.map(\.id) == order && store.rows.first { $0.id == newerReply.id }?.needsReview == false,
+                     "Reading a reply must change how it looks, not where it is")
+        let busier = sample(slowWorking.id, .codex, slowWorking.title, .working, now.addingTimeInterval(20))
+        store.ingest([olderReply, newerReply, input, busier, fastWorking, quiet], now: now)
+        precondition(store.shownRows.map(\.id) == order, "New activity must not reshuffle Working")
+
+        store.ingest([olderReply, newerReply, input, busier, fastWorking, quiet], now: now.addingTimeInterval(9 * 3_600))
+        precondition(store.shownRows.map(\.id) == [input.id, olderReply.id, fastWorking.id, slowWorking.id]
+                     && store.sections.last?.total == 2,
+                     "A read reply should drift to Quiet after eight quiet hours, an unread one should stay")
+
         store.selectedID = input.id
-        precondition(store.selectGroup(forward: true) && store.selectedID == newerReply.id)
+        precondition(store.selectGroup(forward: true) && store.selectedID == olderReply.id)
         precondition(store.selectGroup(forward: true) && store.selectedID == fastWorking.id)
-        precondition(!store.selectGroup(forward: true), "Folded Quiet has no row for Tab to land on")
-        precondition(store.selectGroup(forward: false) && store.selectedID == newerReply.id)
+        precondition(store.selectGroup(forward: true) && store.isQuietHeaderSelected, "⌥↓ should land on folded Quiet")
+        precondition(!store.selectGroup(forward: true) && store.navigableIDs.last == SessionGroup.quiet.headerID)
+        precondition(store.selectGroup(forward: false) && store.selectedID == fastWorking.id)
 
         store.setQuery("notes")
         precondition(store.shownRows.map(\.id) == [quiet.id], "Search should look inside folded Quiet")
         store.setQuery(nil)
+        store.selectedID = SessionGroup.quiet.headerID
         store.setQuietCollapsed(false)
-        precondition(store.shownRows.last?.id == quiet.id)
+        precondition(store.isQuietHeaderSelected && store.shownRows.suffix(2).map(\.id) == [newerReply.id, quiet.id])
+        store.selectedID = quiet.id
+        store.setQuietCollapsed(true)
+        precondition(store.isQuietHeaderSelected, "Folding with a quiet chat selected should keep the place on the header")
+
+        precondition(store.togglePin(slowWorking) == true && store.togglePin(quiet) == true && store.togglePin(input) == true)
+        precondition(store.sections.first?.group == .pinned
+                     && (1...3).compactMap { store.session(in: $0)?.id } == [slowWorking.id, quiet.id, input.id],
+                     "Pins should sit on top in the order they were pinned")
+        precondition(store.togglePin(olderReply) == nil, "Pins should stop at three")
+        precondition(store.togglePin(quiet) == false && !store.isPinned(quiet.id))
+        store.togglePin(slowWorking)
+        store.togglePin(input)
 
         store.hide(input)
-        store.acknowledge(newerReply)
         store.acknowledge(olderReply)
         precondition(store.sidebarItems.first == .allClear && store.nextActionID == nil,
                      "With nothing to act on, the list should say so first")
-        store.setQuietCollapsed(true)
-        precondition(store.shownRows.map(\.id) == [fastWorking.id, slowWorking.id])
     }
 
     private static func checkAttentionMarkers(now: Date) {
@@ -463,16 +488,16 @@ enum SelfChecks {
 
         precondition(store.nextActionID == input.id && store.attentionCount == 4)
         precondition(store.latestReplyID == readReply.id, "Latest reply should include read replies and fall back to their update time")
-        precondition([input.id, earlierInput.id, flagged.id, reply.id].enumerated()
+        precondition([input.id, earlierInput.id, readReply.id, reply.id, flagged.id].enumerated()
                         .allSatisfy { store.session(in: $0.offset + 1)?.id == $0.element },
-                     "Rows should follow their groups: input requests, then replies newest first")
+                     "Rows should follow their groups: requests, finished replies, then working, newest first")
         store.markRead(input)
-        precondition(store.nextActionID == earlierInput.id && store.session(in: 1)?.id == earlierInput.id
-                     && store.attentionCount == 4)
+        precondition(store.nextActionID == earlierInput.id && store.session(in: 1)?.id == input.id
+                     && store.attentionCount == 4, "Reading moves the next action, not the row")
         precondition(!store.isAttentionPending(for: input), "Reading pending input should still dismiss its nudge")
         store.acknowledge(earlierInput)
-        precondition(store.nextActionID == input.id && store.nextAttention()?.id == reply.id,
-                     "A pending input request stays first even after it was read")
+        precondition(store.nextActionID == reply.id && store.nextAttention()?.id == reply.id,
+                     "An unread reply comes before requests you have already read")
         store.markRead(reply)
         precondition(store.nextActionID == input.id && store.attentionCount == 3)
         precondition(store.nextAttention()?.id == flagged.id, "The global shortcut should still follow the unread queue")

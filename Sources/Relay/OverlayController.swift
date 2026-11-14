@@ -141,6 +141,7 @@ final class OverlayController {
                                toggleLater: { [weak self] in self?.onLater?($0) },
                                restoreArchived: { [weak self] in self?.onRestoreArchived?($0) },
                                undo: { [weak self] in self?.onUndo?() },
+                               togglePin: { [weak self] in self?.togglePin($0) },
                                onHighlightRow: { [weak self] in self?.highlightRow($0) },
                                drawsSurface: false)
         let sidebarContent = HoverHost(rootView: list)
@@ -536,8 +537,10 @@ final class OverlayController {
         precondition(store.query.isEmpty && isShowing)
         press("\u{f701}", code: 125)
         precondition(store.selectedID == "one")
+        let placeBeforeReading = store.shownRows.map(\.id)
         press("u", code: 32, flags: .command)
         precondition(store.rows.first { $0.id == "one" }?.statusLabel == "Read")
+        precondition(store.shownRows.map(\.id) == placeBeforeReading, "Reading a chat must not move it")
         press("u", code: 32, flags: .command)
         precondition(store.rows.first { $0.id == "one" }?.statusLabel == "To review")
         let originalOpen = onOpen
@@ -548,23 +551,36 @@ final class OverlayController {
         precondition(openedID == "two", "The first number should open the top row")
         press("2", code: 19)
         precondition(openedID == "one", "The second number should open the second row")
+        press("\u{f701}", code: 125, flags: .option)
+        precondition(store.filter == .all && store.selectedID == "three", "⌥↓ should jump to the next group")
+        press("\u{f701}", code: 125, flags: .option)
+        precondition(store.selectedID == store.sections.last?.rows.first?.id, "⌥↓ should reach the open Quiet group")
+        press("\u{f700}", code: 126, flags: .option)
+        precondition(store.selectedID == "three", "⌥↑ should jump back a group")
         press("\t", code: 48)
-        precondition(store.filter == .all && store.selectedID == "three", "Tab should move to the next group")
+        precondition(store.filter == .later, "Tab should switch to Later")
         press("\t", code: 48)
-        precondition(store.filter == .all && store.selectedID == store.sections.last?.rows.first?.id,
-                     "Tab should reach the expanded Quiet group")
-        press("\t", code: 48)
-        precondition(store.filter == .later, "Tab past the last group should move on to Later")
-        press("\t", code: 48)
-        precondition(store.filter == .all && store.selectedID == "two")
+        precondition(store.filter == .all, "Tab should switch back to All")
         press("\t", code: 48, flags: .shift)
-        precondition(store.filter == .later, "Shift-Tab from the first group should move back a tab")
+        precondition(store.filter == .later)
         store.setFilter(.all)
-        press("\u{f702}", code: 123)
-        precondition(store.quietCollapsed && !store.shownRows.contains { SessionGroup($0) == .quiet },
-                     "Left arrow should fold Quiet")
+        store.selectedID = store.sections.last?.rows.first?.id
+        press("\u{f700}", code: 126)
+        precondition(store.isQuietHeaderSelected, "↑ from the first quiet chat should land on the Quiet header")
+        press("\r", code: 36)
+        precondition(store.quietCollapsed && !store.shownRows.contains { SessionGroup($0) == .quiet }
+                     && store.isQuietHeaderSelected, "↵ on the header should fold Quiet")
         press("\u{f703}", code: 124)
-        precondition(!store.quietCollapsed, "Right arrow should open Quiet")
+        precondition(!store.quietCollapsed, "→ on the header should open Quiet")
+        store.selectedID = "three"
+        press("\u{f702}", code: 123)
+        precondition(!store.quietCollapsed, "← away from Quiet should do nothing")
+        press("p", code: 35)
+        precondition(store.sections.first?.group == .pinned && store.session(in: 1)?.id == "three",
+                     "P should pin the selected chat to the top")
+        press("p", code: 35)
+        precondition(store.sections.first?.group != .pinned && !store.isPinned("three"))
+        store.selectedID = "two"
         press("0", code: 29)
         precondition(store.numberEntry == "", "0 should open the number picker inside Relay")
         press("2", code: 19)
@@ -1103,6 +1119,14 @@ final class OverlayController {
                 return false
             }
         }
+        // ⌥↑ and ⌥↓ jump between groups, as in Claude Code's agent view.
+        if flags == [.option], event.keyCode == 125 || event.keyCode == 126 {
+            guard store.numberEntry == nil else { return true }
+            if !store.keyboardMode { store.keyboardMode = true }
+            keyboardSelectionLocation = NSEvent.mouseLocation
+            store.selectGroup(forward: event.keyCode == 125)
+            return true
+        }
         guard flags.subtracting(.shift).isEmpty else { return false }
         if !store.keyboardMode { store.keyboardMode = true }
         keyboardSelectionLocation = NSEvent.mouseLocation
@@ -1129,18 +1153,22 @@ final class OverlayController {
         case 53:
             if store.isSearching { store.setQuery(nil) } else { close() }
         case 48:
-            // Tab walks the groups first, then moves on to the next tab.
-            let forward = !flags.contains(.shift)
-            guard !store.selectGroup(forward: forward) else { break }
+            // Tab only switches between the tabs; groups are ⌥↑ and ⌥↓.
             let filters = SessionFilter.tabs
             if let current = filters.firstIndex(of: store.filter) {
-                store.setFilter(filters[(current + (forward ? 1 : -1) + filters.count) % filters.count])
+                let step = flags.contains(.shift) ? -1 : 1
+                store.setFilter(filters[(current + step + filters.count) % filters.count])
             }
         case 123, 124:
-            guard store.filter == .all, !store.isSearching else { return false }
+            // Like a Mac outline: → opens the selected Quiet header, ← folds Quiet from its header or a quiet row.
+            guard store.foldsQuiet, let selected = store.selectedID else { return false }
+            let inQuiet = store.isQuietHeaderSelected
+                || rows.contains { $0.id == selected && SessionGroup($0) == .quiet && !store.isPinned($0.id) }
+            guard inQuiet, event.keyCode == 123 || store.isQuietHeaderSelected else { return false }
             store.setQuietCollapsed(event.keyCode == 123)
         case 36, 76:
-            if let session = rows.first(where: { $0.id == store.selectedID })?.session { onOpen?(session) }
+            if store.isQuietHeaderSelected { store.setQuietCollapsed(!store.quietCollapsed) }
+            else if let session = rows.first(where: { $0.id == store.selectedID })?.session { onOpen?(session) }
         case 51, 117:
             if store.isSearching { store.setQuery(String(store.query.dropLast())) }
             else if let target = store.removeTarget(allowSelection: true) { onHide?(target) }
@@ -1165,6 +1193,11 @@ final class OverlayController {
                         else { onLater?(target) }
                     }
                     return true
+                case "p":
+                    if store.filter != .archive, !event.isARepeat, let target = store.removeTarget(allowSelection: true) {
+                        togglePin(target)
+                    }
+                    return true
                 default:
                     if let position = Int(key), Shortcut.numbers.contains(position) {
                         if let session = store.session(in: position) { onOpen?(session) }
@@ -1177,7 +1210,24 @@ final class OverlayController {
         return true
     }
 
+    func togglePin(_ session: Session) {
+        switch store.togglePin(session) {
+        case true?: report("Pinned “\(session.title)” to the top")
+        case false?: report("Unpinned “\(session.title)”")
+        case nil: report("You can pin up to \(SessionStore.maxPins) chats")
+        }
+    }
+
     private func moveSelection(by step: Int) {
+        if store.numberEntry == nil {
+            // ↑ and ↓ also stop on the Quiet header so ↵ can fold or open it.
+            let ids = store.navigableIDs
+            guard !ids.isEmpty else { return }
+            let index = ids.firstIndex { $0 == store.selectedID }
+                .map { max(0, min(ids.count - 1, $0 + step)) } ?? 0
+            if store.selectedID != ids[index] { store.selectedID = ids[index] }
+            return
+        }
         let rows = store.shownRows
         guard !rows.isEmpty else { return }
         let jumping = store.numberEntry != nil
