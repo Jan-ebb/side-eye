@@ -25,6 +25,8 @@ enum OverlayMetrics {
     static let rowMetadataHeight: CGFloat = 15
     static let compactRowHeight: CGFloat = 29
     static let groupHeaderHeight: CGFloat = 28
+    /// Space that closes each group, so a group reads as one block and its header as its start.
+    static let groupGap: CGFloat = 10
     static let allClearHeight: CGFloat = 34
     static let summaryBottomPadding: CGFloat = 6
     static let compactToolbarHeight: CGFloat = 38
@@ -85,13 +87,16 @@ enum OverlayMetrics {
         guard !items.isEmpty else { return emptyHeight }
         let numberWidth = numberWidth(for: store.shownRows.count)
         let textWidth = width - 2 * (sidebarInset + listInset + rowInset) - compactSummaryInset(numberWidth: numberWidth)
-        var height = 2 * listInset + CGFloat(items.count - 1)
-        for item in items {
+        // A header that opens the list sits flush under the tabs.
+        let topInset: CGFloat = if case .header = items.first { 0 } else { listInset }
+        var height = topInset + listInset + CGFloat(items.count - 1)
+        for (index, item) in items.enumerated() {
             switch item {
             case .allClear:
                 height += allClearHeight
             case .header:
                 height += groupHeaderHeight
+                if index > 0 { height += groupGap + 1 }
             case .row(let row, _):
                 height += compactRowHeight
                 if let preview = preview(for: row, in: store) {
@@ -137,6 +142,26 @@ enum OverlayMetrics {
 struct RowPreview: Equatable {
     let text: String
     let isSummary: Bool
+}
+
+/// One group of the list: its header, if it has one, and what sits under it.
+struct ListBlock: Identifiable {
+    let id: String
+    var header: (group: SessionGroup, count: Int, collapsed: Bool)?
+    var items: [SidebarItem] = []
+
+    static func blocks(from items: [SidebarItem]) -> [ListBlock] {
+        var blocks: [ListBlock] = []
+        for item in items {
+            if case .header(let group, let count, let collapsed) = item {
+                blocks.append(ListBlock(id: item.id, header: (group, count, collapsed)))
+                continue
+            }
+            if blocks.isEmpty { blocks.append(ListBlock(id: "top")) }
+            blocks[blocks.count - 1].items.append(item)
+        }
+        return blocks
+    }
 }
 
 struct OverlayColors {
@@ -681,22 +706,39 @@ struct SidebarView: View {
                              now: Date) -> some View {
         let numberWidth = OverlayMetrics.numberWidth(for: rowCount)
         let nextID = store.nextActionID
+        let blocks = ListBlock.blocks(from: items)
+        let opensWithHeader = blocks.first?.header != nil
         return ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(spacing: 1) {
-                    ForEach(items) { item in
-                        switch item {
-                        case .allClear:
-                            allClear(numberWidth: numberWidth)
-                        case .header(let group, let count, let collapsed):
-                            groupHeader(group, count: count, collapsed: collapsed, numberWidth: numberWidth)
-                        case .row(let row, let position):
-                            sidebarRow(row, position: position, isNext: nextID == row.id,
-                                       keyboardTarget: keyboardTarget, numberWidth: numberWidth, now: now)
+                // Each group is a section whose header stays pinned while you scroll through it.
+                LazyVStack(spacing: 1, pinnedViews: [.sectionHeaders]) {
+                    ForEach(Array(blocks.enumerated()), id: \.element.id) { index, block in
+                        Section {
+                            ForEach(block.items) { item in
+                                switch item {
+                                case .allClear:
+                                    allClear(numberWidth: numberWidth)
+                                case .header:
+                                    EmptyView()
+                                case .row(let row, let position):
+                                    sidebarRow(row, position: position, isNext: nextID == row.id,
+                                               keyboardTarget: keyboardTarget, numberWidth: numberWidth, now: now)
+                                }
+                            }
+                            if index < blocks.count - 1 {
+                                Color.clear.frame(height: OverlayMetrics.groupGap).accessibilityHidden(true)
+                            }
+                        } header: {
+                            if let header = block.header {
+                                groupHeader(header.group, count: header.count, collapsed: header.collapsed,
+                                            numberWidth: numberWidth)
+                            }
                         }
                     }
                 }
-                .padding(OverlayMetrics.listInset)
+                .padding(.horizontal, OverlayMetrics.listInset)
+                .padding(.top, opensWithHeader ? 0 : OverlayMetrics.listInset)
+                .padding(.bottom, OverlayMetrics.listInset)
             }
             .scrollBounceBehavior(.basedOnSize)
             .onChange(of: keyboardTarget, initial: true) { _, id in
@@ -744,16 +786,18 @@ struct SidebarView: View {
     private func groupHeader(_ group: SessionGroup, count: Int, collapsed: Bool,
                              numberWidth: CGFloat) -> some View {
         let foldable = group == .quiet && store.filter == .all && !store.isSearching && !jumping
-        let content = HStack(spacing: OverlayMetrics.sourceIconSpacing) {
+        let tint = group == .quiet ? colors.secondary : GroupGlyph.tint(group, colors)
+        let selected = foldable && store.selectedID == group.headerID && store.keyboardMode
+        // A header is a band across the whole list, starting in the number column rather than under the
+        // titles, so it reads as the start of a group and not as another chat.
+        let content = HStack(spacing: 7) {
             GroupGlyph(group: group, colors: colors)
-            HStack(spacing: 6) {
-                Text(group.label)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(group == .quiet ? colors.secondary : GroupGlyph.tint(group, colors))
-                Text(String(count))
-                    .font(.system(size: 12, weight: .medium).monospacedDigit())
-                    .foregroundStyle(colors.tertiary)
-            }
+            Text(group.label)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(tint)
+            Text(String(count))
+                .font(.system(size: 12, weight: .medium).monospacedDigit())
+                .foregroundStyle(tint.opacity(0.62))
             Spacer(minLength: 0)
             if foldable {
                 Image(systemName: collapsed ? "chevron.right" : "chevron.down")
@@ -762,11 +806,18 @@ struct SidebarView: View {
                     .frame(width: OverlayMetrics.timestampWidth, alignment: .trailing)
             }
         }
-        .padding(.leading, OverlayMetrics.rowInset + numberWidth + OverlayMetrics.rowSpacing)
-        .padding(.trailing, OverlayMetrics.rowInset)
+        .padding(.horizontal, OverlayMetrics.listInset + OverlayMetrics.rowInset)
         .frame(height: OverlayMetrics.groupHeaderHeight)
-        .background(foldable && store.selectedID == group.headerID && store.keyboardMode ? colors.selection : .clear,
-                    in: RoundedRectangle(cornerRadius: 5))
+        .background {
+            // Opaque, so the header can stay pinned over the rows scrolling beneath it.
+            ZStack {
+                colors.surface
+                if selected { colors.selection } else { tint.opacity(colors.dark ? 0.13 : 0.075) }
+            }
+            .overlay(alignment: .top) { colors.divider.frame(height: 1).opacity(0.7) }
+            .overlay(alignment: .bottom) { colors.divider.frame(height: 1).opacity(0.7) }
+        }
+        .padding(.horizontal, -OverlayMetrics.listInset)
         .contentShape(Rectangle())
         .id(group.headerID)
         return Group {
