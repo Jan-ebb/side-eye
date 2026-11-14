@@ -631,19 +631,26 @@ enum SelfChecks {
 
     private static func checkGrokWorking(now: Date) {
         let sent = GrokTail(fromUser: true, text: "search the archive in depth", date: now.addingTimeInterval(-20))
-        precondition(DesktopProvider.grokStatus(awaitingInput: false, unread: false, tail: sent, now: now) == .working,
+        precondition(DesktopProvider.grokStatus(awaitingInput: false, unread: false, agentRepliedLast: false, tail: sent, now: now) == .working,
                      "A message you just sent should show the agent working")
         let progress = GrokTail(fromUser: false, text: "The deep archive search is running and will take a few minutes.",
                                 date: now.addingTimeInterval(-60))
-        precondition(DesktopProvider.grokStatus(awaitingInput: false, unread: true, tail: progress, now: now) == .working,
+        precondition(DesktopProvider.grokStatus(awaitingInput: false, unread: true, agentRepliedLast: true, tail: progress, now: now) == .working,
                      "A progress note should keep the agent working")
-        precondition(DesktopProvider.grokStatus(awaitingInput: false, unread: true, tail: progress,
+        precondition(DesktopProvider.grokStatus(awaitingInput: false, unread: true, agentRepliedLast: true, tail: progress,
                                                 now: now.addingTimeInterval(20 * 60)) == .ready,
                      "A progress note with nothing after it should stop counting as work")
         let answer = GrokTail(fromUser: false, text: "I've moved the pharmacy stop to your walk home. Here's the new plan for today.",
                               date: now.addingTimeInterval(-60))
-        precondition(DesktopProvider.grokStatus(awaitingInput: false, unread: true, tail: answer, now: now) == .ready)
-        precondition(DesktopProvider.grokStatus(awaitingInput: true, unread: true, tail: sent, now: now) == .needsInput)
+        precondition(DesktopProvider.grokStatus(awaitingInput: false, unread: true, agentRepliedLast: true, tail: answer, now: now) == .ready)
+        precondition(DesktopProvider.grokStatus(awaitingInput: false, unread: false, agentRepliedLast: true, tail: answer,
+                                                now: now) == .ready, "Reading a Grok reply must keep it in Review")
+        precondition(DesktopProvider.grokStatus(awaitingInput: false, unread: false, agentRepliedLast: false, tail: sent,
+                                                now: now.addingTimeInterval(3_600)) == .idle,
+                     "An old message of yours with no reply is not work in progress")
+        precondition(!DesktopProvider.grokAgentSpokeLast("t1093u") && DesktopProvider.grokAgentSpokeLast("t1093s3811")
+                     && DesktopProvider.grokAgentSpokeLast("agent-outbound-117a") && !DesktopProvider.grokAgentSpokeLast(nil))
+        precondition(DesktopProvider.grokStatus(awaitingInput: true, unread: true, agentRepliedLast: false, tail: sent, now: now) == .needsInput)
         precondition(DesktopProvider.soundsInProgress("Moving the pharmacy stop to the walk home now.")
                      && DesktopProvider.soundsInProgress("I’ll dig through the archive for anything that's missing.")
                      && !DesktopProvider.soundsInProgress("Done. Your calendar has the dentist at 3."))

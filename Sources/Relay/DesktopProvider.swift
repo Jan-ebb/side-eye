@@ -55,7 +55,8 @@ final class DesktopProvider: @unchecked Sendable {
                 status = .needsInput
             } else if generation == "generating" {
                 status = .working
-            } else if header.hasUnreadMessages == true {
+            } else if header.hasUnreadMessages == true || generation == "completed" {
+                // A finished reply you have read stays in Review, marked read, instead of turning idle.
                 status = .ready
             } else {
                 status = .idle
@@ -67,7 +68,9 @@ final class DesktopProvider: @unchecked Sendable {
                 id: "cursor:\(id)", source: .cursor, title: Self.displayTitle(header.name, fallback: "Cursor chat"),
                 status: status, updatedAt: Self.milliseconds(row.int64(1)),
                 route: Self.agentRoute(scheme: "cursor", authority: "anysphere.cursor-deeplink", path: "/agent", id: id),
-                activityID: String(row.int64(1)), completedAt: completion
+                activityID: String(row.int64(1)),
+                reviewedBySource: status == .ready && header.hasUnreadMessages != true ? true : nil,
+                completedAt: completion
             )
         }
     }
@@ -99,7 +102,9 @@ final class DesktopProvider: @unchecked Sendable {
             } else if [1, 6, 7].contains(row.workflowStatus ?? 0) ||
                         ((row.workflowStatus ?? 0) == 0 && [1, 4].contains(row.status ?? 0)) {
                 status = .working
-            } else if row.isUnread == true {
+            } else if row.isUnread == true || [2, 3].contains(row.workflowStatus ?? 0)
+                        || ((row.workflowStatus ?? 0) == 0 && [2, 3].contains(row.status ?? 0)) {
+                // Finished or failed runs stay in Review once read, marked read, instead of turning idle.
                 status = .ready
             } else {
                 status = .idle
@@ -109,6 +114,7 @@ final class DesktopProvider: @unchecked Sendable {
                 detail: "Cloud agent", status: status, updatedAt: updatedAt,
                 route: Self.agentRoute(scheme: "cursor", authority: "anysphere.cursor-deeplink", path: "/background-agent", id: row.bcId, queryName: "bcId"),
                 activityID: String(row.lastMessageActivityAtMs ?? stamp),
+                reviewedBySource: status == .ready && row.isUnread != true ? true : nil,
                 completedAt: status == .ready ? Self.milliseconds(row.lastMessageActivityAtMs ?? stamp) : nil
             )
         }
@@ -148,9 +154,10 @@ final class DesktopProvider: @unchecked Sendable {
             let tail = now.timeIntervalSince(updatedAt) < Self.grokUserTurnWindow
                 ? grokTail(at: root.appending(path: Self.grokBlobName(prefix + "transcript.replicas." + row.id)), id: row.id)
                 : nil
+            let unread = row.hasUnread == true || (row.unreadCount ?? 0) > 0 || (row.unreadThreadCount ?? 0) > 0
             let status = Self.grokStatus(
-                awaitingInput: row.awaitingUserResponse != nil,
-                unread: row.hasUnread == true || (row.unreadCount ?? 0) > 0 || (row.unreadThreadCount ?? 0) > 0,
+                awaitingInput: row.awaitingUserResponse != nil, unread: unread,
+                agentRepliedLast: tail.map { !$0.fromUser } ?? Self.grokAgentSpokeLast(row.newestEntryId ?? row.lastMessageId),
                 tail: tail, now: now)
             return Session(
                 id: "grok:\(row.id)", source: .grok,
@@ -158,6 +165,8 @@ final class DesktopProvider: @unchecked Sendable {
                 status: status, updatedAt: updatedAt,
                 route: Self.agentRoute(scheme: "grokbot", authority: "app", path: "/v1/agent", id: row.id),
                 activityID: row.awaitingUserResponse?.since.map(String.init) ?? row.newestEntryId ?? row.lastMessageId,
+                // Grok Bot knows whether you read the reply, so a read one stays in Review without a dot.
+                reviewedBySource: status == .ready && !unread ? true : nil,
                 completedAt: status == .ready ? updatedAt : nil
             )
         }
@@ -167,7 +176,14 @@ final class DesktopProvider: @unchecked Sendable {
     static let grokUserTurnWindow: TimeInterval = 30 * 60
     static let grokProgressWindow: TimeInterval = 15 * 60
 
-    static func grokStatus(awaitingInput: Bool, unread: Bool, tail: GrokTail?, now: Date) -> SessionStatus {
+    /// Grok Bot names your messages "t<turn>u"; the agent's carry a sequence number or an outbound ID.
+    static func grokAgentSpokeLast(_ entryID: String?) -> Bool {
+        guard let entryID, !entryID.isEmpty else { return false }
+        return entryID.range(of: #"\At[0-9]+u\z"#, options: .regularExpression) == nil
+    }
+
+    static func grokStatus(awaitingInput: Bool, unread: Bool, agentRepliedLast: Bool, tail: GrokTail?,
+                           now: Date) -> SessionStatus {
         if awaitingInput { return .needsInput }
         if let tail {
             let age = now.timeIntervalSince(tail.date)
@@ -176,7 +192,8 @@ final class DesktopProvider: @unchecked Sendable {
             // The agent's newest message says it is still going, such as "The search is running".
             if !tail.fromUser, age < grokProgressWindow, let text = tail.text, soundsInProgress(text) { return .working }
         }
-        return unread ? .ready : .idle
+        // A reply you have read is still finished work: it stays in Review until you archive it or it fades.
+        return unread || agentRepliedLast ? .ready : .idle
     }
 
     /// True for an interim note that promises more, not for a final answer.
