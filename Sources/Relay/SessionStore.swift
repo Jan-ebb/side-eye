@@ -10,7 +10,7 @@ enum SessionFilter: CaseIterable, Hashable {
 
     var label: String {
         switch self {
-        case .all: "All"
+        case .all: "Inbox"
         case .favorites: "Favorites"
         case .needsInput: "Needs input"
         case .toReview: "To review"
@@ -46,8 +46,8 @@ enum SessionGroup: Int, CaseIterable, Hashable {
 
     var label: String {
         switch self {
-        case .needsInput: "Needs input"
-        case .finished: "Finished"
+        case .needsInput: "Needs you"
+        case .finished: "Review"
         case .working: "Working"
         case .quiet: "Idle"
         }
@@ -60,18 +60,17 @@ struct RowSection: Equatable {
     let group: SessionGroup?
     let rows: [SessionRow]
     let total: Int
-    var isCollapsed: Bool { rows.isEmpty && total > 0 }
 }
 
 enum SidebarItem: Identifiable, Equatable {
     case allClear
-    case header(SessionGroup, count: Int, collapsed: Bool)
+    case header(SessionGroup, count: Int)
     case row(SessionRow, position: Int)
 
     var id: String {
         switch self {
         case .allClear: "all-clear"
-        case .header(let group, _, _): group.headerID
+        case .header(let group, _): group.headerID
         case .row(let row, _): row.id
         }
     }
@@ -81,9 +80,8 @@ enum SidebarItem: Identifiable, Equatable {
 final class SessionStore: ObservableObject {
     nonisolated static let automationRunsPreferenceKey = "showsAutomationRuns"
     private static let briefingPreferenceKey = "sidebarUsesBriefing"
-    private static let quietCollapsedPreferenceKey = "sidebarQuietCollapsed"
     private static let pinnedPreferenceKey = "pinnedSessionIDs"
-    static let maxPins = 9
+    static let maxPins = 30
     private static let staleAge: TimeInterval = 8 * 60 * 60
     @Published private(set) var rows: [SessionRow] = []
     @Published private var laterRows: [SessionRow] = []
@@ -97,7 +95,6 @@ final class SessionStore: ObservableObject {
     @Published private var searchQuery: String?
     @Published private(set) var filter: SessionFilter = .all
     @Published private(set) var showsAllSummaries: Bool
-    @Published private(set) var quietCollapsed: Bool
     /// Favorites, in the order they were added. They stay in their groups in All and have their own tab.
     @Published private(set) var pinnedIDs: [String]
     @Published private(set) var showsAutomationRuns: Bool
@@ -122,8 +119,8 @@ final class SessionStore: ObservableObject {
         return activeRows.lazy.filter(filter.includes).count
     }
 
-    /// All and Later show their rows grouped by what they ask of you. Quiet folds away in All
-    /// until it's opened or a search needs it.
+    /// Inbox and Later show their rows grouped by what they ask of you. The Inbox leaves out idle
+    /// chats; search, ⌘K and Favorites still find them, and new activity brings them back.
     var groupsRows: Bool { filter == .all || filter == .later }
 
     var sections: [RowSection] {
@@ -142,28 +139,18 @@ final class SessionStore: ObservableObject {
         // Dictionary(grouping:) keeps each group's rows in their incoming order, which Later relies on.
         let grouped = Dictionary(grouping: visible, by: SessionGroup.init)
         for group in SessionGroup.allCases {
-            guard let members = grouped[group], !members.isEmpty else { continue }
+            guard let members = grouped[group], !members.isEmpty,
+                  group != .quiet || filter != .all || isSearching else { continue }
             let ordered = filter == .later ? members : members.sorted(by: order(within: group))
-            let folded = group == .quiet && foldsQuiet && quietCollapsed
-            sections.append(RowSection(group: group, rows: folded ? [] : ordered, total: ordered.count))
+            sections.append(RowSection(group: group, rows: ordered, total: ordered.count))
         }
         return sections
     }
 
     var shownRows: [SessionRow] { sections.flatMap(\.rows) }
 
-    /// Quiet can fold only in All, and a search always looks inside it.
-    var foldsQuiet: Bool { filter == .all && !isSearching }
-
-    /// What ↑ and ↓ step through: the rows, plus the Quiet header so ↵ can fold or open it.
-    var navigableIDs: [String] {
-        sections.flatMap { section -> [String] in
-            if section.group == .quiet && foldsQuiet { return [SessionGroup.quiet.headerID] + section.rows.map(\.id) }
-            return section.rows.map(\.id)
-        }
-    }
-
-    var isQuietHeaderSelected: Bool { selectedID == SessionGroup.quiet.headerID }
+    /// What ↑ and ↓ step through.
+    var navigableIDs: [String] { shownRows.map(\.id) }
 
     /// The list as drawn: an all-clear line when nothing needs you, group headers and numbered rows.
     var sidebarItems: [SidebarItem] {
@@ -176,7 +163,7 @@ final class SessionStore: ObservableObject {
         var position = 0
         for section in sections {
             if let group = section.group {
-                items.append(.header(group, count: section.total, collapsed: section.isCollapsed))
+                items.append(.header(group, count: section.total))
             }
             for row in section.rows {
                 position += 1
@@ -186,27 +173,14 @@ final class SessionStore: ObservableObject {
         return items
     }
 
-    func setQuietCollapsed(_ value: Bool) {
-        guard value != quietCollapsed else { return }
-        // Folding with a quiet chat selected keeps your place on the header.
-        if value, let selectedID, rows.contains(where: { $0.id == selectedID && SessionGroup($0) == .quiet }) {
-            self.selectedID = SessionGroup.quiet.headerID
-        }
-        quietCollapsed = value
-        defaults?.set(value, forKey: Self.quietCollapsedPreferenceKey)
-        syncSelection()
-        onRowsChanged?()
-    }
-
-    /// Moves the selection to the next or previous group: its first row, or its header when folded.
-    /// Returns false at either end of the list.
+    /// Moves the selection to the first row of the next or previous group. Returns false at either end.
     @discardableResult
     func selectGroup(forward: Bool) -> Bool {
         guard groupsRows else { return false }
         let anchors: [(members: Set<String>, target: String)] = sections.compactMap { section in
             var members = Set(section.rows.map(\.id))
             if let group = section.group { members.insert(group.headerID) }
-            guard let target = section.isCollapsed ? section.group?.headerID : section.rows.first?.id else { return nil }
+            guard let target = section.rows.first?.id else { return nil }
             return (members, target)
         }
         guard !anchors.isEmpty else { return false }
@@ -223,23 +197,33 @@ final class SessionStore: ObservableObject {
 
     func isPinned(_ id: String) -> Bool { pinnedIDs.contains(id) }
 
-    /// Favorites that are not in Later, in the order they were added.
+    /// Favorites in the order they were added, wherever they are in the Inbox: in it, in Later,
+    /// archived, or too old for their app's scan.
     private var favoriteRows: [SessionRow] {
-        pinnedIDs.compactMap { id in activeRows.first { $0.id == id } }
+        let staleBefore = Date().addingTimeInterval(-Self.staleAge)
+        return pinnedIDs.compactMap { id in
+            if let row = rows.first(where: { $0.id == id }) { return row }
+            guard let session = latest[id] ?? history.favorites?[id],
+                  session.source.isEnabled(in: defaults) else { return nil }
+            return makeRow(session, staleBefore: staleBefore)
+        }
     }
 
-    /// Stars a chat or removes its star. The chat stays where it is in All and appears in the
-    /// Favorites tab. Returns nil when Favorites is full.
+    /// Stars a chat or removes its star. The chat stays where it is in the Inbox and stays in
+    /// Favorites until you remove it, even after you archive it. Returns nil when Favorites is full.
     @discardableResult
     func togglePin(_ session: Session) -> Bool? {
+        var favorites = history.favorites ?? [:]
         if let index = pinnedIDs.firstIndex(of: session.id) {
             pinnedIDs.remove(at: index)
+            favorites[session.id] = nil
         } else {
-            // Forget favorites whose chats are gone, keeping ones resting in Later.
-            let live = pinnedIDs.filter { id in rows.contains { $0.id == id } }
-            guard live.count < Self.maxPins else { return nil }
-            pinnedIDs = live + [session.id]
+            guard pinnedIDs.count < Self.maxPins else { return nil }
+            pinnedIDs.append(session.id)
+            favorites[session.id] = Self.snapshot(of: latest[session.id] ?? session)
         }
+        history.favorites = favorites.isEmpty ? nil : favorites
+        persist()
         defaults?.set(pinnedIDs, forKey: Self.pinnedPreferenceKey)
         syncSelection()
         onRowsChanged?()
@@ -339,6 +323,10 @@ final class SessionStore: ObservableObject {
         var completions: [String: Date]?
         var manuallyUnread: Set<String>?
         var savedSessions: [String: SavedSession]?
+        /// Snapshots of favorites, so they stay in Favorites after archiving or ageing out of a scan.
+        var favorites: [String: Session]?
+        /// Chats archived mid-run. They come back when that run ends, not on its progress updates.
+        var archivedWhileWorking: Set<String>?
     }
 
     private enum LastChange {
@@ -357,7 +345,6 @@ final class SessionStore: ObservableObject {
     init(defaults: UserDefaults? = .standard) {
         self.defaults = defaults
         showsAllSummaries = defaults?.bool(forKey: Self.briefingPreferenceKey) ?? false
-        quietCollapsed = defaults?.object(forKey: Self.quietCollapsedPreferenceKey) as? Bool ?? true
         pinnedIDs = defaults?.stringArray(forKey: Self.pinnedPreferenceKey) ?? []
         showsAutomationRuns = defaults?.bool(forKey: Self.automationRunsPreferenceKey) ?? false
         grokMainOnly = defaults?.bool(forKey: "grokMainAgentsOnly") ?? false
@@ -410,11 +397,29 @@ final class SessionStore: ObservableObject {
         }
 
         history.completions = completions.isEmpty ? nil : completions
+        // Keep each favorite's snapshot current enough to show and open it once its app stops reporting it.
+        if !pinnedIDs.isEmpty {
+            var favorites = history.favorites ?? [:]
+            for id in pinnedIDs {
+                guard let session = combined[id] else { continue }
+                let saved = favorites[id]
+                if saved == nil || saved?.title != session.title || saved?.route != session.route
+                    || session.updatedAt.timeIntervalSince(saved?.updatedAt ?? .distantPast) > 3_600 {
+                    favorites[id] = Self.snapshot(of: session)
+                }
+            }
+            history.favorites = favorites.isEmpty ? nil : favorites
+        }
         // Like mail, an archived chat comes back when its agent does something new. Cursor projects and
         // long-lived agents reuse one chat, so without this their new work would stay in Archive.
         for (id, archivedAt) in history.dismissed {
-            guard let session = combined[id], Self.hasActivity(session, after: archivedAt) else { continue }
+            let midRun = history.archivedWhileWorking?.contains(id) == true
+            guard let session = combined[id], Self.hasActivity(session, after: archivedAt, midRun: midRun) else { continue }
             history.dismissed.removeValue(forKey: id)
+            if midRun {
+                history.archivedWhileWorking?.remove(id)
+                if history.archivedWhileWorking?.isEmpty == true { history.archivedWhileWorking = nil }
+            }
             if case .archive(let last) = lastChange, last == id { lastChange = nil }
         }
         for id in history.dismissed.keys where history.savedSessions?[id] == nil {
@@ -551,6 +556,9 @@ final class SessionStore: ObservableObject {
         let deferredAt = history.savedSessions?[current.id]?.deferredAt
         saveSession(SavedSession(snapshot: Self.snapshot(of: current), deferredAt: deferredAt), id: current.id)
         history.dismissed[current.id] = Date()
+        var midRun = history.archivedWhileWorking ?? []
+        if current.status == .working { midRun.insert(current.id) } else { midRun.remove(current.id) }
+        history.archivedWhileWorking = midRun.isEmpty ? nil : midRun
         lastChange = .archive(current.id)
         rebuild()
         selectRow(afterRemoving: index)
@@ -790,11 +798,13 @@ final class SessionStore: ObservableObject {
     }
 
     /// A new turn finished, started or asked for you after the given date. Timestamps alone don't count,
-    /// so an idle chat whose file was touched stays archived.
-    static func hasActivity(_ session: Session, after date: Date) -> Bool {
+    /// so an idle chat whose file was touched stays archived. For a chat archived mid-run, only the end of
+    /// that run counts.
+    static func hasActivity(_ session: Session, after date: Date, midRun: Bool = false) -> Bool {
         switch session.status {
         case .ready: (session.completedAt ?? .distantPast) > date
-        case .needsInput, .working: session.updatedAt > date
+        case .needsInput: session.updatedAt > date
+        case .working: !midRun && session.updatedAt > date
         case .idle, .unknown: false
         }
     }

@@ -147,14 +147,14 @@ struct RowPreview: Equatable {
 /// One group of the list: its header, if it has one, and what sits under it.
 struct ListBlock: Identifiable {
     let id: String
-    var header: (group: SessionGroup, count: Int, collapsed: Bool)?
+    var header: (group: SessionGroup, count: Int)?
     var items: [SidebarItem] = []
 
     static func blocks(from items: [SidebarItem]) -> [ListBlock] {
         var blocks: [ListBlock] = []
         for item in items {
-            if case .header(let group, let count, let collapsed) = item {
-                blocks.append(ListBlock(id: item.id, header: (group, count, collapsed)))
+            if case .header(let group, let count) = item {
+                blocks.append(ListBlock(id: item.id, header: (group, count)))
                 continue
             }
             if blocks.isEmpty { blocks.append(ListBlock(id: "top")) }
@@ -579,7 +579,7 @@ struct SidebarView: View {
     private var header: some View {
         HStack(spacing: 8) {
             if browsingArchive && !jumping {
-                headerButton("Back to All", icon: "chevron.left") {
+                headerButton("Back to Inbox", icon: "chevron.left") {
                     store.setQuery(nil)
                     store.setFilter(.all)
                 }
@@ -680,7 +680,7 @@ struct SidebarView: View {
         switch filter {
         case .favorites: "Chats you starred, in the order you added them (Tab)"
         case .later: "Chats you saved for later (Tab)"
-        default: "All chats, grouped by status (Tab)"
+        default: "What needs you, what to review and what's running (Tab)"
         }
     }
 
@@ -730,8 +730,7 @@ struct SidebarView: View {
                             }
                         } header: {
                             if let header = block.header {
-                                groupHeader(header.group, count: header.count, collapsed: header.collapsed,
-                                            numberWidth: numberWidth)
+                                groupHeader(header.group, count: header.count)
                             }
                         }
                     }
@@ -783,14 +782,11 @@ struct SidebarView: View {
             .id(row.id)
     }
 
-    private func groupHeader(_ group: SessionGroup, count: Int, collapsed: Bool,
-                             numberWidth: CGFloat) -> some View {
-        let foldable = group == .quiet && store.filter == .all && !store.isSearching && !jumping
+    private func groupHeader(_ group: SessionGroup, count: Int) -> some View {
         let tint = group == .quiet ? colors.secondary : GroupGlyph.tint(group, colors)
-        let selected = foldable && store.selectedID == group.headerID && store.keyboardMode
         // A header is a band across the whole list, starting in the number column rather than under the
         // titles, so it reads as the start of a group and not as another chat.
-        let content = HStack(spacing: 7) {
+        return HStack(spacing: 7) {
             GroupGlyph(group: group, colors: colors)
             Text(group.label)
                 .font(.system(size: 12, weight: .semibold))
@@ -799,12 +795,6 @@ struct SidebarView: View {
                 .font(.system(size: 12, weight: .medium).monospacedDigit())
                 .foregroundStyle(tint.opacity(0.62))
             Spacer(minLength: 0)
-            if foldable {
-                Image(systemName: collapsed ? "chevron.right" : "chevron.down")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(colors.tertiary)
-                    .frame(width: OverlayMetrics.timestampWidth, alignment: .trailing)
-            }
         }
         .padding(.horizontal, OverlayMetrics.listInset + OverlayMetrics.rowInset)
         .frame(height: OverlayMetrics.groupHeaderHeight)
@@ -812,29 +802,16 @@ struct SidebarView: View {
             // Opaque, so the header can stay pinned over the rows scrolling beneath it.
             ZStack {
                 colors.surface
-                if selected { colors.selection } else { tint.opacity(colors.dark ? 0.13 : 0.075) }
+                tint.opacity(colors.dark ? 0.13 : 0.075)
             }
             .overlay(alignment: .top) { colors.divider.frame(height: 1).opacity(0.7) }
             .overlay(alignment: .bottom) { colors.divider.frame(height: 1).opacity(0.7) }
         }
         .padding(.horizontal, -OverlayMetrics.listInset)
-        .contentShape(Rectangle())
         .id(group.headerID)
-        return Group {
-            if foldable {
-                Button { store.setQuietCollapsed(!collapsed) } label: { content }
-                    .buttonStyle(.plain)
-                    .help(collapsed ? "Show idle chats (select and press ↵)" : "Hide idle chats (select and press ↵)")
-                    .accessibilityLabel("\(group.label), \(count)")
-                    .accessibilityValue(collapsed ? "Collapsed" : "Expanded")
-                    .accessibilityHint(collapsed ? "Shows idle chats" : "Hides idle chats")
-            } else {
-                content
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("\(group.label), \(count)")
-                    .accessibilityAddTraits(.isHeader)
-            }
-        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(group.label), \(count)")
+        .accessibilityAddTraits(.isHeader)
     }
 
     private func allClear(numberWidth: CGFloat) -> some View {
@@ -860,8 +837,9 @@ struct SidebarView: View {
     }
 
     private var laterActionLabel: String { store.filter == .later ? "Move back" : "Later" }
-    /// Chats in Later and Archive are out of sight, so they can't be favorites until they come back.
-    private var canFavorite: Bool { store.filter != .later && !browsingArchive }
+    private var canFavorite: Bool { !browsingArchive }
+    /// Later and Archive act on the Inbox. Favorites is a lasting list, so there you only open or unstar.
+    private var triages: Bool { !browsingArchive && store.filter != .favorites }
 
     @ViewBuilder
     private func rowMenu(_ row: SessionRow, isMain: Bool) -> some View {
@@ -886,11 +864,13 @@ struct SidebarView: View {
                     togglePin(row.session)
                 }
             }
-            Button(store.filter == .later ? "Move back" : "Move to Later",
-                   systemImage: store.filter == .later ? "arrow.uturn.backward" : "clock") {
-                toggleLater(row.session)
+            if triages {
+                Button(store.filter == .later ? "Move back" : "Move to Later",
+                       systemImage: store.filter == .later ? "arrow.uturn.backward" : "clock") {
+                    toggleLater(row.session)
+                }
+                Button("Archive session", systemImage: "archivebox") { hide(row.session) }
             }
-            Button("Archive session", systemImage: "archivebox") { hide(row.session) }
         }
     }
 
@@ -940,7 +920,7 @@ struct SidebarView: View {
         if store.isLoading { return "Finding sessions…" }
         if !store.query.isEmpty { return "No sessions match" }
         switch store.filter {
-        case .all: return "No active sessions"
+        case .all: return "Nothing in your inbox"
         case .favorites: return "No favorites yet"
         case .needsInput: return "Nothing needs input"
         case .toReview: return "Nothing to review"
@@ -959,7 +939,7 @@ struct SidebarView: View {
         case .all:
             return store.grokMainOnly && store.mainGrokIDs.isEmpty
                 ? "Mark your main Grok agents in Settings."
-                : "Open a chat to see it here."
+                : "Chats land here when an agent needs you, finishes or starts work. Press / to find any other chat."
         case .favorites: return "Hover a chat and click its star, or select it and press F."
         case .needsInput: return "Questions and approvals will appear here."
         case .toReview: return "Unread updates will appear here."
@@ -1012,16 +992,12 @@ struct SidebarView: View {
                           accessibilityHint: "Slash", action: search)
                     .help("Press / to search, or 0 to jump to a row number")
                 Spacer(minLength: 0)
-                if store.isQuietHeaderSelected {
-                    let collapsed = store.quietCollapsed
-                    barButton(collapsed ? "Show idle" : "Hide idle", key: "↵", prominent: true,
-                              accessibilityHint: "Return") { store.setQuietCollapsed(!collapsed) }
-                } else if let selected {
+                if let selected {
                     if canFavorite {
                         barButton(store.isPinned(selected.id) ? "Unfavorite" : "Favorite", key: "F",
                                   accessibilityHint: "F") { togglePin(selected.session) }
                     }
-                    if !browsingArchive {
+                    if triages {
                         barButton(laterActionLabel, key: "L", accessibilityHint: "L") { toggleLater(selected.session) }
                         barButton("Archive", key: "E", accessibilityHint: "E") { hide(selected.session) }
                     }

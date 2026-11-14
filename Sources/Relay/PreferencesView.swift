@@ -273,11 +273,11 @@ struct PreferencesView: View {
     private var statusGuide: some View {
         DisclosureGroup(isExpanded: $showsStatusGuide) {
             VStack(alignment: .leading, spacing: 9) {
-                statusDefinition("To review", "A result or activity is waiting for review.")
+                statusDefinition("Needs you", "An approval, decision, or answer is pending.")
+                statusDefinition("Review", "The agent handed work back. Unread ones are new.")
                 statusDefinition("Read", "The latest update was opened or marked read.")
-                statusDefinition("Needs input", "An approval, decision, or answer is pending.")
                 statusDefinition("Working", "The source reports an active turn.")
-                statusDefinition("Idle", "Nothing is happening: the agent is not working and not waiting on you.")
+                statusDefinition("Idle", "Nothing is happening. Idle chats stay out of the Inbox until new activity.")
                 statusDefinition("Inactive", "An idle chat with no reported activity for eight hours.")
                 statusDefinition("Status unavailable", "Relay has no status signal for this session.")
             }

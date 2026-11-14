@@ -86,11 +86,10 @@ enum SelfChecks {
         let crowded = SessionStore(defaults: nil)
         crowded.ingest(many)
         precondition(crowded.rows.count == 13)
-        precondition(crowded.quietCollapsed && crowded.shownRows.isEmpty
-                     && crowded.sidebarItems == [.allClear, .header(.quiet, count: 13, collapsed: true)],
-                     "Quiet should start folded and say that nothing needs you")
-        crowded.setQuietCollapsed(false)
-        precondition(Shortcut.numbers.compactMap { crowded.session(in: $0)?.id } == many.prefix(9).map(\.id))
+        precondition(crowded.shownRows.isEmpty && crowded.sidebarItems.isEmpty, "Idle chats stay out of the Inbox")
+        crowded.setQuery("Session")
+        precondition(Shortcut.numbers.compactMap { crowded.session(in: $0)?.id } == many.prefix(9).map(\.id),
+                     "Search should find idle chats")
         precondition(crowded.session(in: 10)?.id == "many-10")
         crowded.numberEntry = ""
         crowded.appendJumpDigit("1")
@@ -426,11 +425,11 @@ enum SelfChecks {
         let quiet = sample("quiet", .grok, "Quiet notes", .idle, now.addingTimeInterval(-3_600))
         let fixtures = [olderReply, newerReply, input, slowWorking, fastWorking, quiet]
         store.ingest(fixtures, now: now)
-        precondition(store.sections.map(\.group) == [.needsInput, .finished, .working, .quiet])
+        precondition(store.sections.map(\.group) == [.needsInput, .finished, .working])
         precondition(store.shownRows.map(\.id) == [input.id, newerReply.id, olderReply.id, fastWorking.id, slowWorking.id],
-                     "Groups should list their rows newest first and start with Quiet folded")
-        precondition(store.sidebarItems.first == .header(.needsInput, count: 1, collapsed: false)
-                     && store.sidebarItems.last == .header(.quiet, count: 1, collapsed: true))
+                     "Groups should list their rows newest first and leave idle chats out of the Inbox")
+        precondition(store.sidebarItems.first == .header(.needsInput, count: 1)
+                     && SessionGroup.needsInput.label == "Needs you" && SessionGroup.finished.label == "Review")
         precondition(store.nextActionID == input.id && store.session(in: 4)?.id == fastWorking.id)
 
         let order = store.shownRows.map(\.id)
@@ -442,26 +441,18 @@ enum SelfChecks {
         precondition(store.shownRows.map(\.id) == order, "New activity must not reshuffle Working")
 
         store.ingest([olderReply, newerReply, input, busier, fastWorking, quiet], now: now.addingTimeInterval(9 * 3_600))
-        precondition(store.shownRows.map(\.id) == [input.id, olderReply.id, fastWorking.id, slowWorking.id]
-                     && store.sections.last?.total == 2,
-                     "A read reply should drift to Quiet after eight quiet hours, an unread one should stay")
+        precondition(store.shownRows.map(\.id) == [input.id, olderReply.id, fastWorking.id, slowWorking.id],
+                     "A read reply should leave the Inbox after eight quiet hours, an unread one should stay")
 
         store.selectedID = input.id
         precondition(store.selectGroup(forward: true) && store.selectedID == olderReply.id)
         precondition(store.selectGroup(forward: true) && store.selectedID == fastWorking.id)
-        precondition(store.selectGroup(forward: true) && store.isQuietHeaderSelected, "⌥↓ should land on folded Quiet")
-        precondition(!store.selectGroup(forward: true) && store.navigableIDs.last == SessionGroup.quiet.headerID)
-        precondition(store.selectGroup(forward: false) && store.selectedID == fastWorking.id)
+        precondition(!store.selectGroup(forward: true), "⌥↓ should stop at the last group")
+        precondition(store.selectGroup(forward: false) && store.selectedID == olderReply.id)
 
         store.setQuery("notes")
-        precondition(store.shownRows.map(\.id) == [quiet.id], "Search should look inside folded Quiet")
+        precondition(store.shownRows.map(\.id) == [quiet.id], "Search should find idle chats")
         store.setQuery(nil)
-        store.selectedID = SessionGroup.quiet.headerID
-        store.setQuietCollapsed(false)
-        precondition(store.isQuietHeaderSelected && store.shownRows.suffix(2).map(\.id) == [newerReply.id, quiet.id])
-        store.selectedID = quiet.id
-        store.setQuietCollapsed(true)
-        precondition(store.isQuietHeaderSelected, "Folding with a quiet chat selected should keep the place on the header")
 
         let beforeStars = store.sidebarItems
         precondition(store.togglePin(slowWorking) == true && store.togglePin(quiet) == true && store.togglePin(input) == true)
@@ -476,6 +467,16 @@ enum SelfChecks {
                      "A favorite's number should hold when its status changes")
         store.ingest([olderReply, newerReply, input, busier, fastWorking, quiet], now: now.addingTimeInterval(9 * 3_600))
         store.setFilter(.all)
+        store.hide(slowWorking)
+        store.ingest([olderReply, newerReply, input, fastWorking], now: now.addingTimeInterval(9 * 3_600))
+        store.ingest([olderReply, newerReply, input, fastWorking], now: now.addingTimeInterval(9 * 3_600))
+        store.setFilter(.favorites)
+        precondition((1...3).compactMap { store.session(in: $0)?.id } == [slowWorking.id, quiet.id, input.id]
+                     && store.session(in: 1)?.route == slowWorking.route,
+                     "Favorites should keep archived chats and chats their app stopped reporting")
+        store.setFilter(.all)
+        precondition(!store.shownRows.contains { $0.id == slowWorking.id }, "Archiving still clears it from the Inbox")
+        precondition(store.restoreArchived(slowWorking))
         precondition(store.togglePin(quiet) == false && !store.isPinned(quiet.id))
 
         let full = SessionStore(defaults: nil)
@@ -621,9 +622,10 @@ enum SelfChecks {
         precondition(reloaded.toggleLater(saved) == false)
         reloaded.setFilter(.all)
         precondition(reloaded.session(in: 1) == nil && reloaded.attentionCount == 0,
-                     "A restored chat without a live status belongs in folded Quiet")
-        reloaded.setQuietCollapsed(false)
-        precondition(reloaded.session(in: 1)?.id == input.id)
+                     "A restored chat without a live status stays out of the Inbox")
+        reloaded.setQuery(input.title)
+        precondition(reloaded.session(in: 1)?.id == input.id, "Search should still find it")
+        reloaded.setQuery(nil)
         precondition(reloaded.undoHide() && reloaded.shownRows.isEmpty && reloaded.count(for: .later) == 2)
     }
 
@@ -669,9 +671,23 @@ enum SelfChecks {
                      && store.rows.first?.needsReview == true,
                      "A new finished turn should bring an archived chat back, unread")
 
+        let running = sample("running", .claude, "Long run", .working, later)
+        store.ingest([finished, touched, running], now: later)
+        store.hide(running)
+        let progress = sample(running.id, .claude, running.title, .working, later.addingTimeInterval(300))
+        store.ingest([finished, touched, progress], now: later.addingTimeInterval(300))
+        precondition(store.count(for: .archive) == 2, "Progress on a run you archived must not bring it back")
+        let done = sample(running.id, .claude, running.title, .ready, later.addingTimeInterval(600),
+                          completedAt: later.addingTimeInterval(600))
+        store.ingest([finished, touched, done], now: later.addingTimeInterval(600))
+        precondition(store.count(for: .archive) == 1, "The end of that run should bring it back")
+        let restarted = sample(quiet.id, .codex, quiet.title, .working, later.addingTimeInterval(30))
+        precondition(SessionStore.hasActivity(restarted, after: later) && !SessionStore.hasActivity(touched, after: now),
+                     "A new run on a quiet archived chat should bring it back")
+
         let asking = sample(quiet.id, .codex, quiet.title, .needsInput, later.addingTimeInterval(60))
-        store.ingest([finished, asking], now: later.addingTimeInterval(60))
-        precondition(store.count(for: .archive) == 0 && store.rows.count == 2,
+        store.ingest([finished, asking, done], now: later.addingTimeInterval(660))
+        precondition(store.count(for: .archive) == 0 && store.rows.count == 3,
                      "An agent asking for input should bring its chat back")
     }
 
@@ -741,12 +757,11 @@ enum SelfChecks {
                 return sample("row-7", .cursor, "Explore sidebar spacing", .idle, now.addingTimeInterval(-2_700))
             }
             let title = position == 13 ? "Check billing report" : "Session \(position)"
-            return sample("row-\(position)", .codex, title, .idle, previousDay.addingTimeInterval(-Double(position)),
+            // Working, so the keyboard checks have more than nine numbered rows in the Inbox.
+            return sample("row-\(position)", .codex, title, .working, previousDay.addingTimeInterval(-Double(position)),
                           stateSummary: position == 13 ? "The draft lists three invoices still to reconcile." : nil)
         }
         store.ingest(fixtures)
-        // The keyboard checks number the quiet rows too, so start with Quiet open.
-        store.setQuietCollapsed(false)
         Task {
             let previewDirectory = ProcessInfo.processInfo.environment["RELAY_PREVIEW_DIRECTORY"].map {
                 URL(fileURLWithPath: $0)

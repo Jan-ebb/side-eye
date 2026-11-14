@@ -575,7 +575,7 @@ final class OverlayController {
         press("\u{f701}", code: 125, flags: .option)
         precondition(store.filter == .all && store.selectedID == "three", "⌥↓ should jump to the next group")
         press("\u{f701}", code: 125, flags: .option)
-        precondition(store.selectedID == store.sections.last?.rows.first?.id, "⌥↓ should reach the open Quiet group")
+        precondition(store.selectedID == store.sections.last?.rows.first?.id, "⌥↓ should reach the last group")
         press("\u{f700}", code: 126, flags: .option)
         precondition(store.selectedID == "three", "⌥↑ should jump back a group")
         press("\t", code: 48)
@@ -583,21 +583,11 @@ final class OverlayController {
         press("\t", code: 48)
         precondition(store.filter == .later, "Tab should switch to Later")
         press("\t", code: 48)
-        precondition(store.filter == .all, "Tab should switch back to All")
+        precondition(store.filter == .all, "Tab should switch back to the Inbox")
         press("\t", code: 48, flags: .shift)
         precondition(store.filter == .later)
         store.setFilter(.all)
-        store.selectedID = store.sections.last?.rows.first?.id
-        press("\u{f700}", code: 126)
-        precondition(store.isQuietHeaderSelected, "↑ from the first quiet chat should land on the Quiet header")
-        press("\r", code: 36)
-        precondition(store.quietCollapsed && !store.shownRows.contains { SessionGroup($0) == .quiet }
-                     && store.isQuietHeaderSelected, "↵ on the header should fold Quiet")
-        press("\u{f703}", code: 124)
-        precondition(!store.quietCollapsed, "→ on the header should open Quiet")
         store.selectedID = "three"
-        press("\u{f702}", code: 123)
-        precondition(!store.quietCollapsed, "← away from Quiet should do nothing")
         let order = store.shownRows.map(\.id)
         press("f", code: 3)
         precondition(store.isPinned("three") && store.shownRows.map(\.id) == order,
@@ -1202,15 +1192,9 @@ final class OverlayController {
                 store.setFilter(filters[(current + step + filters.count) % filters.count])
             }
         case 123, 124:
-            // Like a Mac outline: → opens the selected Quiet header, ← folds Quiet from its header or a quiet row.
-            guard store.foldsQuiet, let selected = store.selectedID else { return false }
-            let inQuiet = store.isQuietHeaderSelected
-                || rows.contains { $0.id == selected && SessionGroup($0) == .quiet }
-            guard inQuiet, event.keyCode == 123 || store.isQuietHeaderSelected else { return false }
-            store.setQuietCollapsed(event.keyCode == 123)
+            return false
         case 36, 76:
-            if store.isQuietHeaderSelected { store.setQuietCollapsed(!store.quietCollapsed) }
-            else if let session = rows.first(where: { $0.id == store.selectedID })?.session { onOpen?(session) }
+            if let session = rows.first(where: { $0.id == store.selectedID })?.session { onOpen?(session) }
         case 51, 117:
             if store.isSearching { store.setQuery(String(store.query.dropLast())) }
             else if let target = store.removeTarget(allowSelection: true) { onHide?(target) }
@@ -1230,18 +1214,18 @@ final class OverlayController {
                     jumpByNumber()
                     return true
                 case "e", "l":
-                    if store.filter != .archive, !event.isARepeat, let target = store.removeTarget(allowSelection: true) {
+                    if store.filter != .archive, store.filter != .favorites, !event.isARepeat, let target = store.removeTarget(allowSelection: true) {
                         if key.lowercased() == "e" { onHide?(target) }
                         else { onLater?(target) }
                     }
                     return true
                 case "f", "p":
-                    if store.filter != .archive, store.filter != .later, !event.isARepeat, let target = store.removeTarget(allowSelection: true) {
+                    if store.filter != .archive, !event.isARepeat, let target = store.removeTarget(allowSelection: true) {
                         togglePin(target)
                     }
                     return true
                 case "h":
-                    if store.filter != .archive, !event.isARepeat, store.removeTarget(allowSelection: true) != nil {
+                    if store.filter != .archive, store.filter != .favorites, !event.isARepeat, store.removeTarget(allowSelection: true) != nil {
                         openPalette(choosingLater: true)
                     }
                     return true
@@ -1319,7 +1303,6 @@ final class OverlayController {
                     if row.needsReview { store.markRead(target) } else { store.markUnread(target) }
                 }
             case .previews: store.setShowsAllSummaries(!store.showsAllSummaries)
-            case .idle: store.setQuietCollapsed(!store.quietCollapsed)
             case .showAll: store.setFilter(.all)
             case .showFavorites: store.setFilter(.favorites)
             case .showLater: store.setFilter(.later)

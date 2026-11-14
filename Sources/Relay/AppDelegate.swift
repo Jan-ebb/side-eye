@@ -206,7 +206,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func toggleLater(_ session: Session) {
         guard let deferred = store.toggleLater(session) else { return }
-        overlay?.report(deferred ? "Moved “\(session.title)” to Later" : "Moved “\(session.title)” back to All",
+        overlay?.report(deferred ? "Moved “\(session.title)” to Later" : "Moved “\(session.title)” back to the Inbox",
                         undoable: true)
     }
 

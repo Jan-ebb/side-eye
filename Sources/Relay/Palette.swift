@@ -3,7 +3,7 @@ import Foundation
 /// Everything the ⌘K palette can do. Each command shows its own key, so the palette teaches the shortcuts.
 enum PaletteCommand: String, CaseIterable {
     case open, archive, later, laterUntil, pin, read
-    case previews, idle, showAll, showFavorites, showLater, archiveList, jump, search, undo, settings
+    case previews, showAll, showFavorites, showLater, archiveList, jump, search, undo, settings
 }
 
 struct PaletteState: Equatable {
@@ -41,7 +41,7 @@ struct PaletteEntry: Identifiable, Equatable {
 extension SessionStore {
     var paletteTarget: SessionRow? {
         guard let id = palette?.targetID else { return nil }
-        return rows.first { $0.id == id }
+        return shownRows.first { $0.id == id } ?? rows.first { $0.id == id }
     }
 
     func openPalette(choosingLater: Bool = false) {
@@ -139,19 +139,22 @@ extension SessionStore {
             PaletteEntry(id: "target-" + command.rawValue, section: section, title: title, key: key,
                          icon: .symbol(symbol), action: .command(command), keywords: keywords)
         }
-        var entries = [
-            entry(.open, "Open", key: "↵", symbol: "arrow.up.right", keywords: "switch go"),
-            entry(.archive, "Archive", key: "E", symbol: "archivebox", keywords: "done remove"),
-            entry(.later, filter == .later ? "Move back to All" : "Move to Later", key: "L", symbol: "clock",
-                  keywords: "snooze defer"),
-            entry(.laterUntil, "Later until…", key: "H", symbol: "alarm", keywords: "snooze remind time"),
+        var entries = [entry(.open, "Open", key: "↵", symbol: "arrow.up.right", keywords: "switch go")]
+        // Favorites is a lasting list; archiving and Later only apply to the Inbox.
+        if filter != .favorites {
+            entries += [
+                entry(.archive, "Archive", key: "E", symbol: "archivebox", keywords: "done remove"),
+                entry(.later, filter == .later ? "Move back to Inbox" : "Move to Later", key: "L", symbol: "clock",
+                      keywords: "snooze defer"),
+                entry(.laterUntil, "Later until…", key: "H", symbol: "alarm", keywords: "snooze remind time"),
+            ]
+        }
+        entries += [
+            entry(.pin, isPinned(row.id) ? "Remove from Favorites" : "Add to Favorites", key: "F", symbol: "star",
+                  keywords: "favorite pin star keep"),
             entry(.read, row.needsReview ? "Mark as read" : "Mark as unread", key: "⌘U", symbol: "circlebadge",
                   keywords: "unread seen"),
         ]
-        if filter != .later {
-            entries.insert(entry(.pin, isPinned(row.id) ? "Remove from Favorites" : "Add to Favorites", key: "F",
-                                 symbol: "star", keywords: "favorite pin star keep"), at: 4)
-        }
         return entries
     }
 
@@ -164,8 +167,6 @@ extension SessionStore {
         var entries = [
             entry(.previews, showsAllSummaries ? "Hide previews" : "Show previews", key: "D", symbol: "text.alignleft",
                   keywords: "summary briefing"),
-            entry(.idle, quietCollapsed ? "Show idle chats" : "Hide idle chats", key: nil, symbol: "circle.dashed",
-                  keywords: "quiet fold"),
             entry(.archiveList, "Show Archive", key: nil, symbol: "archivebox", keywords: "archived restore"),
             entry(.jump, "Jump to row", key: "0", symbol: "number", keywords: "number row go"),
             entry(.search, "Search chats", key: "/", symbol: "magnifyingglass", keywords: "find filter"),
@@ -175,11 +176,11 @@ extension SessionStore {
         let tabs = SessionFilter.tabs
         let next = tabs.firstIndex(of: filter).map { tabs[($0 + 1) % tabs.count] } ?? .all
         let tabCommands: [(SessionFilter, PaletteCommand, String)] = [
-            (.all, .showAll, "tray.full"), (.favorites, .showFavorites, "star"), (.later, .showLater, "clock"),
+            (.all, .showAll, "tray"), (.favorites, .showFavorites, "star"), (.later, .showLater, "clock"),
         ]
         entries.insert(contentsOf: tabCommands.filter { $0.0 != filter }.map { tab, command, symbol in
             entry(command, "Go to \(tab.label)", key: tab == next ? "Tab" : nil, symbol: symbol, keywords: "tab list")
-        }, at: 2)
+        }, at: 1)
         if canUndo {
             entries.insert(entry(.undo, "Undo", key: "Z", symbol: "arrow.uturn.backward", keywords: "back revert"),
                            at: 0)
