@@ -27,7 +27,7 @@ enum OverlayMetrics {
     static let groupHeaderHeight: CGFloat = 22
     /// Space that closes each group, so a group reads as one block and its header as its start.
     static let groupGap: CGFloat = 10
-    static let allClearHeight: CGFloat = 34
+    static let allClearHeight: CGFloat = 24
     static let summaryBottomPadding: CGFloat = 6
     static let compactToolbarHeight: CGFloat = 38
     static let headerHeight: CGFloat = 43
@@ -96,7 +96,8 @@ enum OverlayMetrics {
                 height += allClearHeight
             case .header:
                 height += groupHeaderHeight
-                if index > 0 { height += groupGap + 1 }
+                // The all-clear line sits directly on the first band; other groups are a gap apart.
+                if index > 0, items[index - 1] != .allClear { height += groupGap + 1 }
             case .row(let row, _):
                 height += compactRowHeight
                 if let preview = preview(for: row, in: store) {
@@ -275,7 +276,8 @@ private struct AllClearGlyph: View {
             Circle().strokeBorder(lineWidth: 1.5)
             CheckMark().stroke(style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
         }
-        .foregroundStyle(colors.review)
+        // Grey, not Review's green: the line reports an absence and belongs to no group.
+        .foregroundStyle(colors.secondary)
         .frame(width: OverlayMetrics.sourceIconSize, height: OverlayMetrics.sourceIconSize)
         .accessibilityHidden(true)
     }
@@ -718,7 +720,7 @@ struct SidebarView: View {
                             ForEach(block.items) { item in
                                 switch item {
                                 case .allClear:
-                                    allClear(numberWidth: numberWidth)
+                                    allClear
                                 case .header:
                                     EmptyView()
                                 case .row(let row, let position):
@@ -726,7 +728,7 @@ struct SidebarView: View {
                                                keyboardTarget: keyboardTarget, numberWidth: numberWidth, now: now)
                                 }
                             }
-                            if index < blocks.count - 1 {
+                            if index < blocks.count - 1, block.items != [.allClear] {
                                 Color.clear.frame(height: OverlayMetrics.groupGap).accessibilityHidden(true)
                             }
                         } header: {
@@ -844,14 +846,17 @@ struct SidebarView: View {
         .id(group.headerID)
     }
 
-    private func allClear(numberWidth: CGFloat) -> some View {
-        HStack(spacing: OverlayMetrics.sourceIconSpacing) {
+    /// A quiet line where the Needs you band would be. It is plain and grey because bold and colour
+    /// mean something asks for you, and this says nothing does. It lines up with the bands' icons.
+    private var allClear: some View {
+        HStack(spacing: 7) {
             AllClearGlyph(colors: colors)
             Text("Nothing needs you")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(colors.secondary)
             Spacer(minLength: 0)
         }
-        .padding(.leading, OverlayMetrics.rowInset + numberWidth + OverlayMetrics.rowSpacing)
+        .padding(.leading, OverlayMetrics.rowInset)
         .frame(height: OverlayMetrics.allClearHeight)
         .accessibilityElement(children: .combine)
     }
