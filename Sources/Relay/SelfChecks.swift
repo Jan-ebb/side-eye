@@ -753,7 +753,7 @@ enum SelfChecks {
             sample("four", .grok, "Research shortcuts", .idle, previousDay,
                    stateSummary: "The shortcut was tested successfully in full-screen windows."),
             sample("five", .instinct, "Instinct", .unknown, .distantPast),
-        ] + (6...14).map { position in
+        ] + (6...16).map { position in
             if position == 6 {
                 var read = sample("row-6", .codex, "Check deployment notes", .ready, previousDay,
                                   completedAt: previousDay)
@@ -784,6 +784,7 @@ enum SelfChecks {
             precondition(overlay.isShowing && store.keyboardMode && store.selectedID == "two")
             overlay.checkLayoutAndKeyInput()
             overlay.checkSidebarDensity()
+            await overlay.checkTabSwitchRedraw(previewDirectory: previewDirectory)
             precondition(!store.showsAllSummaries, "The default preview should show Compact")
             if let previewDirectory { overlay.renderPreview(in: previewDirectory) }
             overlay.close()

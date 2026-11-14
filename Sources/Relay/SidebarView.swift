@@ -779,7 +779,8 @@ struct SidebarView: View {
                           activate: { open(row.session) },
                           hover: { hoverRow(row.id, entered: $0) })
             .contextMenu { rowMenu(row, isMain: isMain) }
-            .id(row.id)
+            // No .id(row.id) here: ForEach already identifies rows by their ID, which is what scrollTo uses. A
+            // second explicit ID made the lazy list keep old drawings of rows that moved to another section.
     }
 
     private func groupHeader(_ group: SessionGroup, count: Int) -> some View {

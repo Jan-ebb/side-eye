@@ -577,7 +577,8 @@ final class OverlayController {
         press("\u{f701}", code: 125, flags: .option)
         precondition(store.selectedID == store.sections.last?.rows.first?.id, "⌥↓ should reach the last group")
         press("\u{f700}", code: 126, flags: .option)
-        precondition(store.selectedID == "three", "⌥↑ should jump back a group")
+        precondition(store.sections.count > 1 && store.selectedID == store.sections[store.sections.count - 2].rows.first?.id,
+                     "⌥↑ should jump back a group")
         press("\t", code: 48)
         precondition(store.filter == .favorites, "Tab should switch to Favorites")
         press("\t", code: 48)
@@ -586,6 +587,23 @@ final class OverlayController {
         precondition(store.filter == .all, "Tab should switch back to the Inbox")
         press("\t", code: 48, flags: .shift)
         precondition(store.filter == .later)
+        store.setFilter(.all)
+        // ↑ and ↓ step through Favorites in the order the chats were starred.
+        let starred = ["three", "one", "two"]
+        for id in starred { if let row = store.rows.first(where: { $0.id == id }) { _ = store.togglePin(row.session) } }
+        store.selectedID = "one"
+        press("\t", code: 48)
+        precondition(store.filter == .favorites && store.shownRows.map(\.id) == starred)
+        precondition(store.selectedID == "one", "Favorites should keep a starred selection")
+        press("\u{f701}", code: 125)
+        precondition(store.selectedID == "two", "↓ should step down in Favorites")
+        press("\u{f700}", code: 126)
+        press("\u{f700}", code: 126)
+        precondition(store.selectedID == "three", "↑ should step up in Favorites")
+        if let previewDirectory = ProcessInfo.processInfo.environment["RELAY_PREVIEW_DIRECTORY"] {
+            renderPreview(in: URL(fileURLWithPath: previewDirectory).appendingPathComponent("favorites"))
+        }
+        for id in starred { if let row = store.rows.first(where: { $0.id == id }) { _ = store.togglePin(row.session) } }
         store.setFilter(.all)
         store.selectedID = "three"
         let order = store.shownRows.map(\.id)
@@ -947,6 +965,34 @@ final class OverlayController {
             try? bitmap.representation(using: .png, properties: [:])?
                 .write(to: directory.appendingPathComponent(name + ".png"))
         }
+    }
+
+    /// Draws the sidebar as it is on screen rather than a fresh copy, so rows SwiftUI failed to redraw show up.
+    func renderLiveSidebar(to url: URL) {
+        guard let view = sidebar.contentView else { return }
+        view.layoutSubtreeIfNeeded()
+        guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        try? bitmap.representation(using: .png, properties: [:])?.write(to: url)
+    }
+
+    /// Switches from the grouped Inbox to Favorites on screen, where starred chats leave their groups.
+    func checkTabSwitchRedraw(previewDirectory: URL?) async {
+        store.setFilter(.all)
+        let starred = ["three", "one", "two"]
+        for id in starred { if let row = store.rows.first(where: { $0.id == id }) { _ = store.togglePin(row.session) } }
+        store.selectedID = "one"
+        try? await Task.sleep(for: .milliseconds(250))
+        if let previewDirectory { renderLiveSidebar(to: previewDirectory.appendingPathComponent("live-inbox.png")) }
+        sendTestKey("\t", code: 48)
+        try? await Task.sleep(for: .milliseconds(350))
+        if let previewDirectory { renderLiveSidebar(to: previewDirectory.appendingPathComponent("live-favorites.png")) }
+        sendTestKey("\u{f701}", code: 125)
+        try? await Task.sleep(for: .milliseconds(350))
+        precondition(store.filter == .favorites && store.selectedID == "two")
+        if let previewDirectory { renderLiveSidebar(to: previewDirectory.appendingPathComponent("live-favorites-down.png")) }
+        for id in starred { if let row = store.rows.first(where: { $0.id == id }) { _ = store.togglePin(row.session) } }
+        store.setFilter(.all)
     }
 
     private func previewView(for panel: OverlayPanel) -> NSView? {
