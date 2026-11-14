@@ -640,7 +640,7 @@ final class OverlayController {
         store.setShowsAllSummaries(true)
         precondition(store.shownRows == originalRows, "Layout should preserve row order")
         precondition(OverlayMetrics.sidebarHeight(for: store) > compactHeight,
-                     "Briefing adds a summary line under each row, so it needs a taller panel")
+                     "Previews add a line under each row, so they need a taller panel")
         precondition(sidebar.frame.maxX == compactFrame.maxX, "Both layouts must keep the pill's right edge")
         if let path = ProcessInfo.processInfo.environment["RELAY_PREVIEW_DIRECTORY"] {
             renderPreview(in: URL(fileURLWithPath: path).appendingPathComponent("briefing"))

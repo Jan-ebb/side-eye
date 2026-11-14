@@ -27,7 +27,6 @@ enum OverlayMetrics {
     static let groupHeaderHeight: CGFloat = 28
     static let allClearHeight: CGFloat = 34
     static let summaryBottomPadding: CGFloat = 6
-    static let upNextLabel = "Up next"
     static let compactToolbarHeight: CGFloat = 38
     static let headerHeight: CGFloat = 43
     static let filterHeight: CGFloat = 31
@@ -70,15 +69,14 @@ enum OverlayMetrics {
         numberWidth + rowSpacing + sourceIconSize + sourceIconSpacing
     }
 
-    /// The line under a row: the next action's request in both layouts, and every row's summary in Briefing.
+    /// The preview under a row. Previews are all or nothing: with them on, every row gets one, its
+    /// summary or, until there is one, where the chat runs.
     @MainActor
-    static func summaryText(for row: SessionRow, in store: SessionStore) -> String? {
-        guard store.numberEntry == nil, store.filter != .archive else { return nil }
-        let summary = row.session.stateSummary.flatMap { $0.isEmpty ? nil : $0 }
-        if row.id == store.nextActionID {
-            return summary.map { "\(upNextLabel) · \($0)" } ?? upNextLabel
-        }
-        return store.showsAllSummaries ? summary : nil
+    static func preview(for row: SessionRow, in store: SessionStore) -> RowPreview? {
+        guard store.showsAllSummaries, store.numberEntry == nil, store.filter != .archive else { return nil }
+        if let summary = row.session.stateSummary, !summary.isEmpty { return RowPreview(text: summary, isSummary: true) }
+        let place = [row.session.source.name, row.session.detail].filter { !$0.isEmpty }.joined(separator: " · ")
+        return RowPreview(text: place, isSummary: false)
     }
 
     @MainActor
@@ -96,8 +94,9 @@ enum OverlayMetrics {
                 height += groupHeaderHeight
             case .row(let row, _):
                 height += compactRowHeight
-                if let text = summaryText(for: row, in: store) {
-                    height += summaryHeight(text, width: textWidth - 2, limit: rowSummaryLines) + summaryBottomPadding
+                if let preview = preview(for: row, in: store) {
+                    height += summaryHeight(preview.text, width: textWidth - 2,
+                                            limit: preview.isSummary ? rowSummaryLines : 1) + summaryBottomPadding
                 }
             }
         }
@@ -117,6 +116,11 @@ enum OverlayMetrics {
         }
         return compactToolbarHeight + list + footerHeight + 2
     }
+}
+
+struct RowPreview: Equatable {
+    let text: String
+    let isSummary: Bool
 }
 
 struct OverlayColors {
@@ -561,7 +565,7 @@ struct SidebarView: View {
 
     private var summaryToggle: some View {
         let expanded = store.showsAllSummaries
-        let title = expanded ? "Show compact list" : "Show Briefing"
+        let title = expanded ? "Hide previews" : "Show previews"
         return headerButton(title, icon: expanded ? "list.bullet" : "list.bullet.rectangle",
                             help: store.isSearching ? title : "\(title) (D)") {
             store.setShowsAllSummaries(!expanded)
@@ -673,9 +677,9 @@ struct SidebarView: View {
         let isMain = row.session.source == .grok && store.mainGrokIDs.contains(row.id)
         let keyboardSelected = keyboardTarget == row.id
         let pointerSelected = !jumping && !store.keyboardMode && store.selectedID == row.id
-        let showsSummary = OverlayMetrics.summaryText(for: row, in: store) != nil
+        let preview = OverlayMetrics.preview(for: row, in: store)
         let hasActions = !browsingArchive && !jumping && !store.isSearching && store.selectedID == row.id
-        return SidebarRow(row: row, position: position, isNext: isNext, showsSummary: showsSummary,
+        return SidebarRow(row: row, position: position, isNext: isNext, preview: preview,
                           jumping: jumping, searching: store.isSearching,
                           keyboardSelected: keyboardSelected, selected: keyboardSelected || pointerSelected,
                           showsMainChip: isMain && (jumping || store.showsAllSummaries),
@@ -948,7 +952,7 @@ private struct SidebarRow: View {
     let row: SessionRow
     let position: Int
     let isNext: Bool
-    let showsSummary: Bool
+    let preview: RowPreview?
     let jumping: Bool
     let searching: Bool
     let keyboardSelected: Bool
@@ -1002,14 +1006,20 @@ private struct SidebarRow: View {
                     }
                 }
                 .frame(height: OverlayMetrics.compactRowHeight)
-                if showsSummary {
-                    StateSummary(summary: session.stateSummary ?? "", colors: colors,
-                                 lineLimit: OverlayMetrics.rowSummaryLines,
-                                 heading: isNext ? Text(OverlayMetrics.upNextLabel)
-                                    .foregroundColor(row.visualState.tint(colors))
-                                    .fontWeight(.semibold) : nil)
-                        .padding(.leading, OverlayMetrics.compactSummaryInset(numberWidth: numberWidth))
-                        .padding(.bottom, OverlayMetrics.summaryBottomPadding)
+                if let preview {
+                    Group {
+                        if preview.isSummary {
+                            StateSummary(summary: preview.text, colors: colors, lineLimit: OverlayMetrics.rowSummaryLines)
+                        } else {
+                            Text(preview.text)
+                                .font(.system(size: OverlayMetrics.summaryFontSize))
+                                .foregroundStyle(colors.tertiary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                    }
+                    .padding(.leading, OverlayMetrics.compactSummaryInset(numberWidth: numberWidth))
+                    .padding(.bottom, OverlayMetrics.summaryBottomPadding)
                 }
             }
             .padding(.horizontal, OverlayMetrics.rowInset)

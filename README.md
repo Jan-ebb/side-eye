@@ -4,7 +4,7 @@ Relay is a native macOS menu bar app for keeping parallel agent conversations wi
 
 Drag the edge pill up or down to dock it at a different height. Relay saves its position on each display. Hover to grow the pill into the sidebar, and move away to shrink it back. Relay uses native Force Touch feedback on reveal and after a drag settles. Its animations follow the system Reduce Motion setting.
 
-The sidebar opens in **Compact**, with one line per chat and a short summary for **Up next** when available. Press **D** or use the layout button to switch to **Briefing**, which adds a summary line under each row. Relay remembers the layout you choose.
+The sidebar opens with one line per chat. Press **D** or use the preview button to add a preview under every chat: its latest summary, or where it runs until a summary exists. Press **D** again to hide them all. Relay remembers your choice.
 
 ## Switching
 
@@ -14,7 +14,7 @@ The sidebar opens in **Compact**, with one line per chat and a short summary for
 | / | Search the current list. |
 | 1–9 | Open rows 1–9 from top to bottom. |
 | 0 | Jump to any numbered row. Type the number, then press Return. |
-| D | Switch between Compact and Briefing. |
+| D | Show or hide previews. |
 | E | Archive the selected chat. |
 | L | Move the selected chat to Later, or back to All from the Later list. |
 | Tab | Move to the next group, then on to Later. Shift-Tab goes back. |
