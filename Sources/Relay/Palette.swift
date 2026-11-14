@@ -33,6 +33,8 @@ struct PaletteEntry: Identifiable, Equatable {
     var detail: String?
     var key: String?
     let icon: Icon
+    /// For a chat: its status in words, and the group whose colour it takes when it asks something of you.
+    var state: String?
     var group: SessionGroup?
     let action: Action
     var keywords = ""
@@ -203,9 +205,12 @@ extension SessionStore {
         guard listingAll else { return [] }
         // No row numbers here: digits type into the palette, so a number would be a key that does nothing.
         return rows.map { row in
+            // Read and idle chats keep a plain label; only a state that is live or waiting takes its colour.
+            let live = row.session.status == .working || row.session.status == .needsInput || row.needsReview
             return PaletteEntry(id: "chat-" + row.id, section: "Chats", title: row.session.title,
                                 detail: row.session.source.name,
-                                icon: .source(row.session.source), group: SessionGroup(row),
+                                icon: .source(row.session.source), state: row.shortState,
+                                group: live ? SessionGroup(row) : nil,
                                 action: .chat(row.id),
                                 keywords: [row.session.source.name, row.session.detail, row.statusLabel]
                                     .joined(separator: " "))

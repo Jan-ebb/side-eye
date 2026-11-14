@@ -766,14 +766,14 @@ struct SidebarView: View {
         let pointerSelected = !jumping && !store.keyboardMode && store.selectedID == row.id
         let preview = OverlayMetrics.preview(for: row, in: store)
         let hasActions = !browsingArchive && !jumping && !store.isSearching && store.selectedID == row.id
-        // Status shows once per view: the Inbox has its group bands; flat lists (Favorites, Later and
-        // search results) put the status icon on the row instead.
-        let stateGlyph = store.groupsRows || browsingArchive ? nil : SessionGroup(row)
+        // Status shows once per view, always in words: the Inbox has its group bands; flat lists
+        // (Favorites, Later and search results) write it on the row, since an icon alone needs a legend.
+        let stateLabel = store.groupsRows || browsingArchive ? nil : row.shortState
         // Later is about when a chat comes back, so every row there says when.
         let returnDate = store.filter == .later ? store.returnDate(for: row.id) : nil
         let returnLabel = store.filter == .later
             ? returnDate.map { Self.returnLabel($0, now: now) } ?? "No date" : nil
-        return SidebarRow(row: row, position: position, isNext: isNext, preview: preview, stateGlyph: stateGlyph,
+        return SidebarRow(row: row, position: position, isNext: isNext, preview: preview, stateLabel: stateLabel,
                           returnLabel: returnLabel, returnsByItself: returnDate != nil,
                           isFavorite: store.isPinned(row.id),
                           canFavorite: canFavorite && !jumping,
@@ -800,9 +800,10 @@ struct SidebarView: View {
                 Text(group.label)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(tint)
-                // The count is what still asks something of you. Read replies are accounted for on the right.
+                // Needs you and Working count their rows. Review counts only what you have not read, and
+                // says so, because read replies stay listed beneath it.
                 if count > 0 {
-                    Text(String(count))
+                    Text(group == .finished ? "· \(count) unread" : String(count))
                         .font(.system(size: 12, weight: .medium).monospacedDigit())
                         .foregroundStyle(tint.opacity(0.62))
                 }
@@ -814,7 +815,7 @@ struct SidebarView: View {
             if read > 0 && !jumping {
                 Button(action: archiveRead) {
                     HStack(spacing: 5) {
-                        Text("Archive \(read) read")
+                        Text("Archive \(read) read \(read == 1 ? "chat" : "chats")")
                         KeyCap(key: "⇧E", colors: colors)
                     }
                     .font(.system(size: 11, weight: .medium))
@@ -1169,7 +1170,14 @@ struct SidebarView: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                if let group = entry.group { GroupGlyph(group: group, colors: colors) }
+                if let state = entry.state {
+                    Text(state)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(entry.group.map { GroupGlyph.tint($0, colors) } ?? colors.secondary)
+                        .lineLimit(1)
+                        .fixedSize()
+                    Circle().fill(colors.secondary).frame(width: 2, height: 2)
+                }
                 if let detail = entry.detail {
                     Text(detail)
                         .font(.system(size: 11, weight: .medium))
@@ -1192,7 +1200,8 @@ struct SidebarView: View {
             }
         }
         .accessibilityLabel(entry.title)
-        .accessibilityValue([entry.detail, entry.key.map { "Shortcut \($0)" }].compactMap { $0 }.joined(separator: ", "))
+        .accessibilityValue([entry.state, entry.detail, entry.key.map { "Shortcut \($0)" }].compactMap { $0 }
+            .joined(separator: ", "))
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
@@ -1222,7 +1231,7 @@ private struct SidebarRow: View {
     let position: Int
     let isNext: Bool
     let preview: RowPreview?
-    let stateGlyph: SessionGroup?
+    let stateLabel: String?
     /// In Later: when the chat comes back, or that it has no date.
     let returnLabel: String?
     /// True when the chat in Later has a time and returns without you.
@@ -1248,8 +1257,6 @@ private struct SidebarRow: View {
 
     private var session: Session { row.session }
     private var showsStar: Bool { hovered && canFavorite }
-    /// A finished reply you have already read: quieter than one that still waits for you.
-    private var isRead: Bool { SessionStore.isReadReply(row) }
     private var directShortcut: Bool { Shortcut.numbers.contains(position) }
 
     private var numberShortcut: String {
@@ -1281,8 +1288,13 @@ private struct SidebarRow: View {
                             .frame(width: 6, height: 6)
                             .accessibilityHidden(true)
                     }
-                    if let stateGlyph {
-                        GroupGlyph(group: stateGlyph, colors: colors)
+                    if let stateLabel {
+                        Text(stateLabel)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(row.visualState.tint(colors))
+                            .lineLimit(1)
+                            .fixedSize()
+                            .accessibilityHidden(true)
                     }
                     if !jumping {
                         ZStack(alignment: .trailing) {
@@ -1374,8 +1386,9 @@ private struct SidebarRow: View {
                 .frame(width: OverlayMetrics.sourceIconSize, height: OverlayMetrics.sourceIconSize)
                 .accessibilityHidden(true)
             Text(session.title)
-                .font(.system(size: 14, weight: row.needsReview ? .semibold : isRead ? .regular : .medium))
-                .foregroundStyle(row.isStale ? colors.secondary : isRead ? colors.body : colors.primary)
+                // Two styles only: bold, with a dot, when there is something new for you; plain otherwise.
+                .font(.system(size: 14, weight: row.needsReview ? .semibold : .regular))
+                .foregroundStyle(row.needsReview ? colors.primary : colors.body)
                 .lineLimit(1)
                 .truncationMode(.tail)
             if showsMainChip {

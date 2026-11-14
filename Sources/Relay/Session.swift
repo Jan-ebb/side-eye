@@ -79,6 +79,18 @@ struct SessionRow: Identifiable, Equatable {
     var isStale = false
     var id: String { session.id }
 
+    /// The status in a word or two, for rows that sit outside the Inbox's groups. Nil when the app
+    /// reports no status, so the row does not carry a label that says nothing.
+    var shortState: String? {
+        switch session.status {
+        case .needsInput: "Needs you"
+        case .ready: needsReview ? "Review" : "Read"
+        case .working: "Working"
+        case .idle: "Idle"
+        case .unknown: nil
+        }
+    }
+
     var statusLabel: String {
         switch session.status {
         case .ready: needsReview ? "Review" : "Read"
