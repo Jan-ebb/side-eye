@@ -2,8 +2,8 @@ import Foundation
 
 /// Everything the ⌘K palette can do. Each command shows its own key, so the palette teaches the shortcuts.
 enum PaletteCommand: String, CaseIterable {
-    case open, archive, later, laterUntil, pin, read
-    case previews, showAll, showFavorites, showLater, archiveList, jump, search, undo, settings
+    case open, archive, later, laterUntil, pin, read, restore
+    case previews, archiveRead, showAll, showFavorites, showLater, archiveList, jump, search, undo, settings
 }
 
 struct PaletteState: Equatable {
@@ -132,7 +132,7 @@ extension SessionStore {
     }
 
     private var targetEntries: [PaletteEntry] {
-        guard filter != .archive, let row = paletteTarget else { return [] }
+        guard let row = paletteTarget else { return [] }
         let section = "For “\(row.session.title)”"
         func entry(_ command: PaletteCommand, _ title: String, key: String?, symbol: String,
                    keywords: String = "") -> PaletteEntry {
@@ -140,6 +140,10 @@ extension SessionStore {
                          icon: .symbol(symbol), action: .command(command), keywords: keywords)
         }
         var entries = [entry(.open, "Open", key: "↵", symbol: "arrow.up.right", keywords: "switch go")]
+        if filter == .archive {
+            return entries + [entry(.restore, "Restore", key: "R", symbol: "arrow.uturn.backward",
+                                    keywords: "unarchive inbox back")]
+        }
         // Favorites is a lasting list; archiving and Later only apply to the Inbox.
         if filter != .favorites {
             entries += [
@@ -150,8 +154,8 @@ extension SessionStore {
             ]
         }
         entries += [
-            entry(.pin, isPinned(row.id) ? "Remove from Favorites" : "Add to Favorites", key: "F", symbol: "star",
-                  keywords: "favorite pin star keep"),
+            entry(.pin, isPinned(row.id) ? "Unfavorite" : "Favorite", key: "F", symbol: "star",
+                  keywords: "favorites pin star keep add remove"),
             entry(.read, row.needsReview ? "Mark as read" : "Mark as unread", key: "⌘U", symbol: "circlebadge",
                   keywords: "unread seen"),
         ]
@@ -167,20 +171,26 @@ extension SessionStore {
         var entries = [
             entry(.previews, showsAllSummaries ? "Hide previews" : "Show previews", key: "D", symbol: "text.alignleft",
                   keywords: "summary briefing"),
-            entry(.archiveList, "Show Archive", key: nil, symbol: "archivebox", keywords: "archived restore"),
+            entry(.archiveList, "Go to Archive", key: nil, symbol: "arrow.right", keywords: "show archived restore"),
             entry(.jump, "Jump to row", key: "0", symbol: "number", keywords: "number row go"),
             entry(.search, "Search chats", key: "/", symbol: "magnifyingglass", keywords: "find filter"),
             entry(.settings, "Settings", key: "⌘,", symbol: "gearshape", keywords: "preferences shortcuts"),
         ]
-        // The other tabs; the next one shows Tab, the key that gets there.
+        // The other tabs; the next one shows Tab, the key that gets there. Going somewhere has one
+        // icon, so a star, clock or archive box always means acting on a chat.
         let tabs = SessionFilter.tabs
         let next = tabs.firstIndex(of: filter).map { tabs[($0 + 1) % tabs.count] } ?? .all
-        let tabCommands: [(SessionFilter, PaletteCommand, String)] = [
-            (.all, .showAll, "tray"), (.favorites, .showFavorites, "star"), (.later, .showLater, "clock"),
+        let tabCommands: [(SessionFilter, PaletteCommand)] = [
+            (.all, .showAll), (.favorites, .showFavorites), (.later, .showLater),
         ]
-        entries.insert(contentsOf: tabCommands.filter { $0.0 != filter }.map { tab, command, symbol in
-            entry(command, "Go to \(tab.label)", key: tab == next ? "Tab" : nil, symbol: symbol, keywords: "tab list")
+        entries.insert(contentsOf: tabCommands.filter { $0.0 != filter }.map { tab, command in
+            entry(command, "Go to \(tab.label)", key: tab == next ? "Tab" : nil, symbol: "arrow.right",
+                  keywords: "tab list show")
         }, at: 1)
+        if filter == .all, readReplyCount > 0 {
+            entries.insert(entry(.archiveRead, "Archive all read", key: "⇧E", symbol: "archivebox",
+                                 keywords: "done clear inbox zero"), at: 0)
+        }
         if canUndo {
             entries.insert(entry(.undo, "Undo", key: "Z", symbol: "arrow.uturn.backward", keywords: "back revert"),
                            at: 0)
@@ -191,13 +201,10 @@ extension SessionStore {
     /// Chats appear once you start typing, so the palette doubles as the fastest way to switch.
     private func chatEntries(listingAll: Bool) -> [PaletteEntry] {
         guard listingAll else { return [] }
-        let positions = Dictionary(shownRows.enumerated().map { ($0.element.id, $0.offset + 1) },
-                                   uniquingKeysWith: { first, _ in first })
+        // No row numbers here: digits type into the palette, so a number would be a key that does nothing.
         return rows.map { row in
-            let position = positions[row.id]
             return PaletteEntry(id: "chat-" + row.id, section: "Chats", title: row.session.title,
                                 detail: row.session.source.name,
-                                key: position.flatMap { Shortcut.numbers.contains($0) ? String($0) : nil },
                                 icon: .source(row.session.source), group: SessionGroup(row),
                                 action: .chat(row.id),
                                 keywords: [row.session.source.name, row.session.detail, row.statusLabel]

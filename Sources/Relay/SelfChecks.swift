@@ -18,14 +18,14 @@ enum SelfChecks {
         let ready = sample("codex", .codex, "Sidebar keyboard flow", .ready, now, activityID: "turn-1")
         store.ingest([ready, other, blocked])
         precondition(alerts.map(\.id) == [current.id])
-        precondition(store.rows.first { $0.id == current.id }?.statusLabel == "To review")
+        precondition(store.rows.first { $0.id == current.id }?.statusLabel == "Review")
         store.acknowledge(ready)
         store.ingest([ready, other, blocked])
         precondition(alerts.count == 1 && store.attentionCount == 2)
         precondition(store.rows.first { $0.id == current.id }?.statusLabel == "Read")
         store.markUnread(ready)
         precondition(store.rows.first { $0.id == current.id }?.isManuallyUnread == true)
-        precondition(store.rows.first { $0.id == current.id }?.statusLabel == "To review")
+        precondition(store.rows.first { $0.id == current.id }?.statusLabel == "Review")
         store.markRead(ready)
         precondition(store.rows.first { $0.id == current.id }?.statusLabel == "Read" && alerts.count == 1)
 
@@ -160,7 +160,7 @@ enum SelfChecks {
         age.ingest([quiet, oldWorking, oldInput], now: now.addingTimeInterval(3))
         precondition(age.rows.first { $0.id == quiet.id }?.statusLabel == "Inactive")
         precondition(age.rows.first { $0.id == oldWorking.id }?.statusLabel == "Working")
-        precondition(age.rows.first { $0.id == oldInput.id }?.statusLabel == "Needs input")
+        precondition(age.rows.first { $0.id == oldInput.id }?.statusLabel == "Needs you")
         checkRailPlacement()
         checkCodexAutomationVisibility(now: now)
         print("Session checks passed (attention, Later, Archive, search, layouts, completion order, grouping, shortcuts, status age, Grok scope and summaries).")
@@ -428,7 +428,7 @@ enum SelfChecks {
         precondition(store.sections.map(\.group) == [.needsInput, .finished, .working])
         precondition(store.shownRows.map(\.id) == [input.id, newerReply.id, olderReply.id, fastWorking.id, slowWorking.id],
                      "Groups should list their rows newest first and leave idle chats out of the Inbox")
-        precondition(store.sidebarItems.first == .header(.needsInput, count: 1)
+        precondition(store.sidebarItems.first == .header(.needsInput, count: 1, read: 0)
                      && SessionGroup.needsInput.label == "Needs you" && SessionGroup.finished.label == "Review")
         precondition(store.nextActionID == input.id && store.session(in: 4)?.id == fastWorking.id)
 
@@ -436,22 +436,36 @@ enum SelfChecks {
         store.acknowledge(newerReply)
         precondition(store.shownRows.map(\.id) == order && store.rows.first { $0.id == newerReply.id }?.needsReview == false,
                      "Reading a reply must change how it looks, not where it is")
+        precondition(store.sidebarItems.contains(.header(.finished, count: 1, read: 1)) && store.readReplyCount == 1,
+                     "Review should count unread replies and account for read ones separately")
         let busier = sample(slowWorking.id, .codex, slowWorking.title, .working, now.addingTimeInterval(20))
         store.ingest([olderReply, newerReply, input, busier, fastWorking, quiet], now: now)
         precondition(store.shownRows.map(\.id) == order, "New activity must not reshuffle Working")
 
         store.ingest([olderReply, newerReply, input, busier, fastWorking, quiet], now: now.addingTimeInterval(9 * 3_600))
-        precondition(store.shownRows.map(\.id) == [input.id, olderReply.id, fastWorking.id, slowWorking.id],
-                     "A read reply should leave the Inbox after eight quiet hours, an unread one should stay")
+        precondition(store.shownRows.map(\.id) == order,
+                     "A read reply should stay under Review until it is archived, however old it gets")
+
+        store.selectedID = newerReply.id
+        precondition(store.archiveRead() == 1 && store.readReplyCount == 0
+                     && store.shownRows.map(\.id) == [input.id, olderReply.id, fastWorking.id, slowWorking.id]
+                     && store.selectedID == olderReply.id,
+                     "Archive all read should clear read replies only and keep the selection nearby")
+        precondition(store.archiveRead() == 0, "With nothing read there is nothing to archive")
+        precondition(store.undoHide() && store.shownRows.map(\.id) == order, "Undo should bring every read reply back")
 
         store.selectedID = input.id
-        precondition(store.selectGroup(forward: true) && store.selectedID == olderReply.id)
+        precondition(store.selectGroup(forward: true) && store.selectedID == newerReply.id)
         precondition(store.selectGroup(forward: true) && store.selectedID == fastWorking.id)
         precondition(!store.selectGroup(forward: true), "⌥↓ should stop at the last group")
-        precondition(store.selectGroup(forward: false) && store.selectedID == olderReply.id)
+        precondition(store.selectGroup(forward: false) && store.selectedID == newerReply.id)
 
         store.setQuery("notes")
-        precondition(store.shownRows.map(\.id) == [quiet.id], "Search should find idle chats")
+        precondition(store.shownRows.map(\.id) == [quiet.id] && store.sections.first?.group == nil,
+                     "Search should find idle chats and list results flat")
+        store.setQuery("turn")
+        precondition(store.shownRows.map(\.id) == [fastWorking.id, slowWorking.id] && !store.groupsRows,
+                     "Search results should be one flat list")
         store.setQuery(nil)
 
         let beforeStars = store.sidebarItems
@@ -513,6 +527,7 @@ enum SelfChecks {
                      "Chats appear only once you type")
         store.typeInPalette("billing")
         precondition(store.paletteEntries.map(\.action) == [.chat(working.id)], "Typing a name should find the chat")
+        precondition(store.paletteEntries.first?.key == nil, "Chats in the palette carry no row number; digits type there")
         store.deleteInPalette()
         precondition(store.palette?.query == "billin", "Delete should remove one character")
         store.closePalette()
@@ -530,6 +545,22 @@ enum SelfChecks {
         store.ingest([reply, working], now: now.addingTimeInterval(3_700))
         precondition(store.count(for: .later) == 0 && store.rows.first { $0.id == reply.id }?.needsReview == true,
                      "A chat should come back from Later on time, marked unread")
+
+        let archive = SessionStore(defaults: nil)
+        var read = sample("read", .codex, "Read reply", .ready, now, completedAt: now)
+        read.reviewedBySource = true
+        archive.ingest([read, working], now: now)
+        archive.selectedID = read.id
+        archive.openPalette()
+        precondition(archive.paletteEntries.contains { $0.action == .command(.archiveRead) },
+                     "The palette should offer Archive all read while the Inbox holds read replies")
+        archive.closePalette()
+        archive.hide(read)
+        archive.setFilter(.archive)
+        archive.selectedID = read.id
+        archive.openPalette()
+        precondition(Array(archive.paletteEntries.map(\.action).prefix(2)) == [.command(.open), .command(.restore)],
+                     "In Archive the palette should offer Open and Restore")
     }
 
     private static func checkAttentionMarkers(now: Date) {
@@ -594,8 +625,13 @@ enum SelfChecks {
         precondition(store.nextAttention()?.id == review.id && !store.isAttentionPending(for: input))
 
         store.setFilter(.later)
-        precondition(store.nextActionID == nil && store.session(in: 1)?.id == input.id
-                     && store.session(in: 2)?.id == working.id, "Later should group its rows like All")
+        precondition(store.nextActionID == nil && store.sections.map(\.group) == [nil]
+                     && store.shownRows.map(\.id) == [working.id, input.id],
+                     "Later should be one flat list, most recently saved first")
+        precondition(store.deferSession(review, until: now.addingTimeInterval(3_600))
+                     && store.shownRows.map(\.id) == [review.id, working.id, input.id],
+                     "Chats with a return time should lead Later, soonest first")
+        precondition(store.undoHide() && store.shownRows.map(\.id) == [working.id, input.id])
         store.setQuery("")
         precondition(store.isSearching && store.query.isEmpty && store.shownRows.count == 2)
         store.setQuery("approval")
@@ -785,6 +821,7 @@ enum SelfChecks {
             overlay.checkLayoutAndKeyInput()
             overlay.checkSidebarDensity()
             await overlay.checkTabSwitchRedraw(previewDirectory: previewDirectory)
+            overlay.checkArchiveKeys()
             precondition(!store.showsAllSummaries, "The default preview should show Compact")
             if let previewDirectory { overlay.renderPreview(in: previewDirectory) }
             overlay.close()
@@ -840,7 +877,7 @@ enum SelfChecks {
                                     activityID: "turn", completedAt: finishedAt)
                 store.ingest(changed)
                 precondition(overlay.isNudging && !overlay.isShowing,
-                             "Completion should nudge with Needs input selected and the sidebar closed")
+                             "Completion should nudge with Needs you selected and the sidebar closed")
                 precondition(store.rows.first?.id == "three" && !store.shownRows.contains { $0.id == "three" })
                 var summary = changed[2]
                 summary.stateSummary = "Export spacing is fixed and ready for a narrow-window check."
@@ -861,7 +898,7 @@ enum SelfChecks {
                              "An input nudge should show the decision with To review selected")
                 if let previewDirectory { overlay.renderPreview(in: previewDirectory) }
                 store.markRead(changed[2])
-                precondition(!overlay.isNudging && store.rows.first { $0.id == "three" }?.statusLabel == "Needs input")
+                precondition(!overlay.isNudging && store.rows.first { $0.id == "three" }?.statusLabel == "Needs you")
                 store.setFilter(.all)
             }
             print("Native overlay checks passed. Registered \(Shortcut.allCases.count - missing.count)/\(Shortcut.allCases.count) global shortcuts.")

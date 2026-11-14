@@ -35,7 +35,7 @@ enum SessionStatus: String, Codable, Sendable {
     var name: String {
         switch self {
         case .working: "Working"
-        case .needsInput: "Needs input"
+        case .needsInput: "Needs you"
         case .ready: "Ready"
         case .idle: "Idle"
         case .unknown: "Status unavailable"
@@ -81,7 +81,7 @@ struct SessionRow: Identifiable, Equatable {
 
     var statusLabel: String {
         switch session.status {
-        case .ready: needsReview ? "To review" : "Read"
+        case .ready: needsReview ? "Review" : "Read"
         case .idle: isStale ? "Inactive" : "Idle"
         default: session.status.name
         }

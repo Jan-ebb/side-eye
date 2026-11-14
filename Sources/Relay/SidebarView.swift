@@ -24,7 +24,7 @@ enum OverlayMetrics {
     static let timestampWidth: CGFloat = 30
     static let rowMetadataHeight: CGFloat = 15
     static let compactRowHeight: CGFloat = 29
-    static let groupHeaderHeight: CGFloat = 28
+    static let groupHeaderHeight: CGFloat = 22
     /// Space that closes each group, so a group reads as one block and its header as its start.
     static let groupGap: CGFloat = 10
     static let allClearHeight: CGFloat = 34
@@ -147,14 +147,14 @@ struct RowPreview: Equatable {
 /// One group of the list: its header, if it has one, and what sits under it.
 struct ListBlock: Identifiable {
     let id: String
-    var header: (group: SessionGroup, count: Int)?
+    var header: (group: SessionGroup, count: Int, read: Int)?
     var items: [SidebarItem] = []
 
     static func blocks(from items: [SidebarItem]) -> [ListBlock] {
         var blocks: [ListBlock] = []
         for item in items {
-            if case .header(let group, let count) = item {
-                blocks.append(ListBlock(id: item.id, header: (group, count)))
+            if case .header(let group, let count, let read) = item {
+                blocks.append(ListBlock(id: item.id, header: (group, count, read)))
                 continue
             }
             if blocks.isEmpty { blocks.append(ListBlock(id: "top")) }
@@ -484,6 +484,7 @@ struct SidebarView: View {
     let restoreArchived: (Session) -> Void
     var undo: () -> Void = {}
     var togglePin: (Session) -> Void = { _ in }
+    var archiveRead: () -> Void = {}
     var runPalette: (PaletteEntry) -> Void = { _ in }
     var onHighlightRow: ((String) -> Void)? = nil
     var drawsSurface = true
@@ -569,7 +570,7 @@ struct SidebarView: View {
         .onChange(of: store.filter) { hoveredRowID = nil }
         .foregroundStyle(colors.primary)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Relay sessions")
+        .accessibilityLabel("Relay chats")
     }
 
     private var borderColor: Color {
@@ -585,7 +586,7 @@ struct SidebarView: View {
                 }
             }
             if store.isSearching && !jumping {
-                let placeholder = browsingArchive ? "Search archive" : "Search sessions"
+                let placeholder = browsingArchive ? "Search archive" : "Search chats"
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(colors.secondary)
@@ -596,7 +597,7 @@ struct SidebarView: View {
                     .lineLimit(1)
                     .accessibilityLabel(store.query.isEmpty ? placeholder : "Search \(store.query)")
             } else {
-                Text(browsingArchive ? "Archive" : "Sessions")
+                Text(browsingArchive ? "Archive" : "Chats")
                     .font(.system(size: 14, weight: .semibold))
                     .accessibilityAddTraits(.isHeader)
             }
@@ -670,7 +671,7 @@ struct SidebarView: View {
                 .buttonStyle(.plain)
                 .help(Self.tabHelp(filter))
                 .accessibilityLabel(filter.label)
-                .accessibilityValue("\(count) \(count == 1 ? "session" : "sessions")")
+                .accessibilityValue("\(count) \(count == 1 ? "chat" : "chats")")
                 .accessibilityAddTraits(selected ? .isSelected : [])
             }
         }
@@ -730,7 +731,7 @@ struct SidebarView: View {
                             }
                         } header: {
                             if let header = block.header {
-                                groupHeader(header.group, count: header.count)
+                                groupHeader(header.group, count: header.count, read: header.read)
                             }
                         }
                     }
@@ -762,13 +763,16 @@ struct SidebarView: View {
         let pointerSelected = !jumping && !store.keyboardMode && store.selectedID == row.id
         let preview = OverlayMetrics.preview(for: row, in: store)
         let hasActions = !browsingArchive && !jumping && !store.isSearching && store.selectedID == row.id
-        // Favorites has no groups, so its rows carry their status glyph themselves.
-        let favorites = store.filter == .favorites
-        let stateGlyph = favorites ? SessionGroup(row) : nil
-        let returnLabel = store.filter == .later ? store.returnDate(for: row.id).map { Self.returnLabel($0, now: now) } : nil
+        // Status shows once per view: the Inbox has its group bands; flat lists (Favorites, Later and
+        // search results) put the status icon on the row instead.
+        let stateGlyph = store.groupsRows || browsingArchive ? nil : SessionGroup(row)
+        // Later is about when a chat comes back, so every row there says when.
+        let returnDate = store.filter == .later ? store.returnDate(for: row.id) : nil
+        let returnLabel = store.filter == .later
+            ? returnDate.map { Self.returnLabel($0, now: now) } ?? "No date" : nil
         return SidebarRow(row: row, position: position, isNext: isNext, preview: preview, stateGlyph: stateGlyph,
-                          returnLabel: returnLabel, isFavorite: store.isPinned(row.id),
-                          marksFavorite: !favorites && store.isPinned(row.id),
+                          returnLabel: returnLabel, returnsByItself: returnDate != nil,
+                          isFavorite: store.isPinned(row.id),
                           canFavorite: canFavorite && !jumping,
                           toggleFavorite: { togglePin(row.session) },
                           jumping: jumping, searching: store.isSearching,
@@ -783,19 +787,43 @@ struct SidebarView: View {
             // second explicit ID made the lazy list keep old drawings of rows that moved to another section.
     }
 
-    private func groupHeader(_ group: SessionGroup, count: Int) -> some View {
+    private func groupHeader(_ group: SessionGroup, count: Int, read: Int) -> some View {
         let tint = group == .quiet ? colors.secondary : GroupGlyph.tint(group, colors)
         // A header is a band across the whole list, starting in the number column rather than under the
         // titles, so it reads as the start of a group and not as another chat.
         return HStack(spacing: 7) {
-            GroupGlyph(group: group, colors: colors)
-            Text(group.label)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(tint)
-            Text(String(count))
-                .font(.system(size: 12, weight: .medium).monospacedDigit())
-                .foregroundStyle(tint.opacity(0.62))
+            HStack(spacing: 7) {
+                GroupGlyph(group: group, colors: colors)
+                Text(group.label)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(tint)
+                // The count is what still asks something of you. Read replies are accounted for on the right.
+                if count > 0 {
+                    Text(String(count))
+                        .font(.system(size: 12, weight: .medium).monospacedDigit())
+                        .foregroundStyle(tint.opacity(0.62))
+                }
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(read > 0 ? "\(group.label), \(count) unread, \(read) read" : "\(group.label), \(count)")
+            .accessibilityAddTraits(.isHeader)
             Spacer(minLength: 0)
+            if read > 0 && !jumping {
+                Button(action: archiveRead) {
+                    HStack(spacing: 5) {
+                        Text("Archive \(read) read")
+                        KeyCap(key: "⇧E", colors: colors)
+                    }
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(colors.secondary)
+                    .frame(height: OverlayMetrics.groupHeaderHeight)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Archive every chat you have already read (⇧E)")
+                .accessibilityLabel("Archive \(read) read \(read == 1 ? "chat" : "chats")")
+                .accessibilityHint("Shift E")
+            }
         }
         .padding(.horizontal, OverlayMetrics.listInset + OverlayMetrics.rowInset)
         .frame(height: OverlayMetrics.groupHeaderHeight)
@@ -810,9 +838,6 @@ struct SidebarView: View {
         }
         .padding(.horizontal, -OverlayMetrics.listInset)
         .id(group.headerID)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(group.label), \(count)")
-        .accessibilityAddTraits(.isHeader)
     }
 
     private func allClear(numberWidth: CGFloat) -> some View {
@@ -860,7 +885,7 @@ struct SidebarView: View {
                 }
             }
             if canFavorite {
-                Button(store.isPinned(row.id) ? "Remove from Favorites" : "Add to Favorites",
+                Button(store.isPinned(row.id) ? "Unfavorite" : "Favorite",
                        systemImage: store.isPinned(row.id) ? "star.slash" : "star") {
                     togglePin(row.session)
                 }
@@ -870,7 +895,7 @@ struct SidebarView: View {
                        systemImage: store.filter == .later ? "arrow.uturn.backward" : "clock") {
                     toggleLater(row.session)
                 }
-                Button("Archive session", systemImage: "archivebox") { hide(row.session) }
+                Button("Archive", systemImage: "archivebox") { hide(row.session) }
             }
         }
     }
@@ -918,12 +943,12 @@ struct SidebarView: View {
     }
 
     private var emptyTitle: String {
-        if store.isLoading { return "Finding sessions…" }
-        if !store.query.isEmpty { return "No sessions match" }
+        if store.isLoading { return "Finding chats…" }
+        if !store.query.isEmpty { return "No chats match" }
         switch store.filter {
         case .all: return "Nothing in your inbox"
         case .favorites: return "No favorites yet"
-        case .needsInput: return "Nothing needs input"
+        case .needsInput: return "Nothing needs you"
         case .toReview: return "Nothing to review"
         case .later: return "Nothing saved for later"
         case .archive: return store.missingArchiveCount > 0 ? "No archived chats available" : "No archived chats"
@@ -934,7 +959,7 @@ struct SidebarView: View {
         if store.isLoading { return nil }
         if !store.query.isEmpty {
             if browsingArchive { return "Clear search to see the full archive." }
-            return store.filter == .all ? "Clear search to see all sessions." : "Try a different search or filter."
+            return store.filter == .all ? "Clear search to see all chats." : "Try a different search or tab."
         }
         switch store.filter {
         case .all:
@@ -989,12 +1014,17 @@ struct SidebarView: View {
                 }
             } else {
                 barButton("Search", key: "/", leadingKey: true,
-                          accessibilityLabel: browsingArchive ? "Search archive" : "Search sessions",
+                          accessibilityLabel: browsingArchive ? "Search archive" : "Search chats",
                           accessibilityHint: "Slash", action: search)
                     .help("Press / to search, or 0 to jump to a row number")
                 Spacer(minLength: 0)
                 if let selected {
-                    if canFavorite {
+                    // Only what this list is for: triage in the Inbox and Later, unfavoriting in
+                    // Favorites, restoring in Archive. F and the hover star still favorite anywhere.
+                    if browsingArchive {
+                        barButton("Restore", key: "R", accessibilityHint: "R") { restoreArchived(selected.session) }
+                    }
+                    if store.filter == .favorites {
                         barButton(store.isPinned(selected.id) ? "Unfavorite" : "Favorite", key: "F",
                                   accessibilityHint: "F") { togglePin(selected.session) }
                     }
@@ -1118,28 +1148,25 @@ struct SidebarView: View {
     private func paletteRow(_ entry: PaletteEntry, selected: Bool, index: Int) -> some View {
         Button { runPalette(entry) } label: {
             HStack(spacing: OverlayMetrics.rowSpacing) {
+                // A chat reads as it does in the sidebar: its app's icon first, its status icon on the right.
                 Group {
                     switch entry.icon {
                     case .symbol(let name):
                         Image(systemName: name)
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(colors.secondary)
-                    case .source:
-                        if let group = entry.group { GroupGlyph(group: group, colors: colors) }
-                    }
-                }
-                .frame(width: OverlayMetrics.shortcutWidth)
-                HStack(spacing: OverlayMetrics.sourceIconSpacing) {
-                    if case .source(let source) = entry.icon {
+                    case .source(let source):
                         SourceAppIcon(source: source, size: OverlayMetrics.sourceIconSize)
                             .frame(width: OverlayMetrics.sourceIconSize, height: OverlayMetrics.sourceIconSize)
                     }
-                    Text(entry.title)
-                        .font(.system(size: 14, weight: .medium))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(width: OverlayMetrics.shortcutWidth)
+                Text(entry.title)
+                    .font(.system(size: 14, weight: .medium))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if let group = entry.group { GroupGlyph(group: group, colors: colors) }
                 if let detail = entry.detail {
                     Text(detail)
                         .font(.system(size: 11, weight: .medium))
@@ -1193,11 +1220,11 @@ private struct SidebarRow: View {
     let isNext: Bool
     let preview: RowPreview?
     let stateGlyph: SessionGroup?
-    /// For chats in Later with a time: when they come back.
+    /// In Later: when the chat comes back, or that it has no date.
     let returnLabel: String?
+    /// True when the chat in Later has a time and returns without you.
+    let returnsByItself: Bool
     let isFavorite: Bool
-    /// A small star after the title, in lists where favorites sit among other chats.
-    let marksFavorite: Bool
     let canFavorite: Bool
     let toggleFavorite: () -> Void
     let jumping: Bool
@@ -1218,6 +1245,8 @@ private struct SidebarRow: View {
 
     private var session: Session { row.session }
     private var showsStar: Bool { hovered && canFavorite }
+    /// A finished reply you have already read: quieter than one that still waits for you.
+    private var isRead: Bool { SessionStore.isReadReply(row) }
     private var directShortcut: Bool { Shortcut.numbers.contains(position) }
 
     private var numberShortcut: String {
@@ -1234,23 +1263,18 @@ private struct SidebarRow: View {
         Button(action: activate) {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: OverlayMetrics.rowSpacing) {
-                    RowNumber(label: String(position), highlighted: selected, colors: colors, boxed: jumping)
+                    // Numbers are shortcuts, and digits type into a search, so search results carry none.
+                    RowNumber(label: searching ? "" : String(position), highlighted: selected, colors: colors,
+                              boxed: jumping)
                         .frame(width: numberWidth)
                         .accessibilityHidden(true)
                     title
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    if marksFavorite && !showsStar {
-                        Image(systemName: "star.fill")
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(colors.secondary)
-                            .accessibilityLabel("Favorite")
-                    }
-                    // Unread is a bold title and a dot. Reading changes how the row looks, not where it is.
+                    // Unread is a bold title and one dot. Its color says nothing about status; the group
+                    // band or the status icon does that. Reading changes how the row looks, not where it is.
                     if row.needsReview {
-                        // The dot takes its status color, so rows are color-coded too.
-                        let group = SessionGroup(row)
                         Circle()
-                            .fill(group == .quiet ? colors.secondary : GroupGlyph.tint(group, colors))
+                            .fill(colors.accent)
                             .frame(width: 6, height: 6)
                             .accessibilityHidden(true)
                     }
@@ -1259,18 +1283,22 @@ private struct SidebarRow: View {
                     }
                     if !jumping {
                         ZStack(alignment: .trailing) {
-                            Color.clear
                             if let returnLabel {
-                                Label(returnLabel, systemImage: "alarm")
-                                    .labelStyle(.titleAndIcon)
-                                    .font(.system(size: 11, weight: .medium))
-                                    .foregroundStyle(colors.secondary)
-                                    .fixedSize()
+                                Group {
+                                    if returnsByItself {
+                                        Label(returnLabel, systemImage: "alarm").labelStyle(.titleAndIcon)
+                                    } else {
+                                        Text(returnLabel)
+                                    }
+                                }
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(returnsByItself ? colors.secondary : colors.tertiary)
+                                .fixedSize()
                             } else if let timestamp = row.timestamp {
                                 RowTimestamp(date: timestamp, now: now, colors: colors)
                             }
                         }
-                        .frame(width: OverlayMetrics.timestampWidth)
+                        .frame(minWidth: OverlayMetrics.timestampWidth, alignment: .trailing)
                         .opacity(showsStar ? 0 : 1)
                     }
                 }
@@ -1316,8 +1344,8 @@ private struct SidebarRow: View {
                 }
                 .buttonStyle(.plain)
                 .padding(.trailing, OverlayMetrics.rowInset)
-                .help(isFavorite ? "Remove from Favorites (F)" : "Add to Favorites (F)")
-                .accessibilityLabel(isFavorite ? "Remove from Favorites" : "Add to Favorites")
+                .help(isFavorite ? "Unfavorite (F)" : "Favorite (F)")
+                .accessibilityLabel(isFavorite ? "Unfavorite" : "Favorite")
             }
         }
         .onHover { inside in
@@ -1343,8 +1371,8 @@ private struct SidebarRow: View {
                 .frame(width: OverlayMetrics.sourceIconSize, height: OverlayMetrics.sourceIconSize)
                 .accessibilityHidden(true)
             Text(session.title)
-                .font(.system(size: 14, weight: row.needsReview ? .semibold : .medium))
-                .foregroundStyle(row.isStale ? colors.secondary : colors.primary)
+                .font(.system(size: 14, weight: row.needsReview ? .semibold : isRead ? .regular : .medium))
+                .foregroundStyle(row.isStale ? colors.secondary : isRead ? colors.body : colors.primary)
                 .lineLimit(1)
                 .truncationMode(.tail)
             if showsMainChip {

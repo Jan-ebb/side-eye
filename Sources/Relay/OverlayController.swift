@@ -84,7 +84,7 @@ final class OverlayController {
     private var selectedDisplayID: String?
     private var railPress: RailPress?
     private let rail = OverlayPanel(name: "Relay edge", size: OverlayMetrics.railSize)
-    private let sidebar = OverlayPanel(name: "Relay sessions", size: .init(width: OverlayMetrics.width, height: 200))
+    private let sidebar = OverlayPanel(name: "Relay chats", size: .init(width: OverlayMetrics.width, height: 200))
     private let nudge = OverlayPanel(name: "Relay nudge", size: OverlayMetrics.nudgeSize)
     private var screen: NSScreen?
     private var hoverTask: Task<Void, Never>?
@@ -108,6 +108,7 @@ final class OverlayController {
     var onHide: ((Session) -> Void)?
     var onLater: ((Session) -> Void)?
     var onRestoreArchived: ((Session) -> Void)?
+    var onArchiveRead: (() -> Void)?
     var onUndo: (() -> Void)?
     var onShowSettings: (() -> Void)?
 
@@ -142,6 +143,7 @@ final class OverlayController {
                                restoreArchived: { [weak self] in self?.onRestoreArchived?($0) },
                                undo: { [weak self] in self?.onUndo?() },
                                togglePin: { [weak self] in self?.togglePin($0) },
+                               archiveRead: { [weak self] in self?.onArchiveRead?() },
                                runPalette: { [weak self] in self?.runPaletteEntry($0) },
                                onHighlightRow: { [weak self] in self?.highlightRow($0) },
                                drawsSurface: false)
@@ -249,7 +251,7 @@ final class OverlayController {
             typeJumpDigit("0")
             return
         }
-        guard !store.shownRows.isEmpty else { report("No sessions to open"); return }
+        guard !store.shownRows.isEmpty else { report("No chats to open"); return }
         setNumberEntry("")
         if !keyboardPinned { show(keyboard: true) }
         store.selectedID = store.shownRows.first?.id
@@ -563,7 +565,7 @@ final class OverlayController {
         precondition(store.rows.first { $0.id == "one" }?.statusLabel == "Read")
         precondition(store.shownRows.map(\.id) == placeBeforeReading, "Reading a chat must not move it")
         press("u", code: 32, flags: .command)
-        precondition(store.rows.first { $0.id == "one" }?.statusLabel == "To review")
+        precondition(store.rows.first { $0.id == "one" }?.statusLabel == "Review")
         let originalOpen = onOpen
         defer { onOpen = originalOpen }
         var openedID: String?
@@ -998,6 +1000,30 @@ final class OverlayController {
         store.setFilter(.all)
     }
 
+    /// ⇧E clears read replies in one step, Z brings them back, and R restores a chat from Archive.
+    func checkArchiveKeys() {
+        store.setFilter(.all)
+        precondition(isShowing && store.readReplyCount == 1, "The fixture should hold one read reply")
+        let inbox = store.shownRows.map(\.id)
+        sendTestKey("E", code: 14, flags: .shift)
+        precondition(store.readReplyCount == 0 && store.shownRows.count == inbox.count - 1,
+                     "⇧E should archive every read reply and nothing else")
+        sendTestKey("z", code: 6)
+        precondition(store.shownRows.map(\.id) == inbox, "Z should undo archive all read")
+        store.selectedID = "row-6"
+        sendTestKey("e", code: 14)
+        precondition(!store.rows.contains { $0.id == "row-6" }, "E should still archive one chat")
+        showArchive()
+        store.selectedID = "row-6"
+        sendTestKey("e", code: 14, flags: .shift)
+        precondition(store.filter == .archive, "⇧E should do nothing outside the Inbox")
+        sendTestKey("r", code: 15)
+        precondition(store.rows.contains { $0.id == "row-6" }, "R should restore the selected chat from Archive")
+        store.setFilter(.all)
+        store.selectedID = store.shownRows.first?.id
+        store.notice = nil
+    }
+
     private func previewView(for panel: OverlayPanel) -> NSView? {
         if let host = panel.contentView as? NSHostingView<SidebarView> {
             var root = host.rootView
@@ -1263,6 +1289,15 @@ final class OverlayController {
                 case "0":
                     jumpByNumber()
                     return true
+                case "e" where flags.contains(.shift):
+                    // ⇧E clears every reply you have already read out of the Inbox.
+                    if store.filter == .all, !event.isARepeat { onArchiveRead?() }
+                    return true
+                case "r" where store.filter == .archive:
+                    if !event.isARepeat, let row = store.shownRows.first(where: { $0.id == store.selectedID }) {
+                        onRestoreArchived?(row.session)
+                    }
+                    return true
                 case "e", "l":
                     if store.filter != .archive, store.filter != .favorites, !event.isARepeat, let target = store.removeTarget(allowSelection: true) {
                         if key.lowercased() == "e" { onHide?(target) }
@@ -1357,6 +1392,8 @@ final class OverlayController {
             case .showFavorites: store.setFilter(.favorites)
             case .showLater: store.setFilter(.later)
             case .archiveList: showArchive()
+            case .archiveRead: onArchiveRead?()
+            case .restore: if let target { onRestoreArchived?(target) }
             case .jump: jumpByNumber()
             case .search: beginSearch()
             case .undo: onUndo?()

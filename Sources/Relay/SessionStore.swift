@@ -4,7 +4,7 @@ import Combine
 enum SessionFilter: CaseIterable, Hashable {
     case all, favorites, needsInput, toReview, later, archive
 
-    // Needs input and To review are groups inside All rather than tabs. The filters stay for
+    // Needs you and Review are groups inside the Inbox rather than tabs. The filters stay for
     // the counts the pill and nudges use.
     static let tabs: [SessionFilter] = [.all, .favorites, .later]
 
@@ -12,8 +12,8 @@ enum SessionFilter: CaseIterable, Hashable {
         switch self {
         case .all: "Inbox"
         case .favorites: "Favorites"
-        case .needsInput: "Needs input"
-        case .toReview: "To review"
+        case .needsInput: "Needs you"
+        case .toReview: "Review"
         case .later: "Later"
         case .archive: "Archive"
         }
@@ -29,7 +29,7 @@ enum SessionFilter: CaseIterable, Hashable {
     }
 }
 
-/// Where a chat sits in All and Later. Groups follow what the agent is doing, never whether you
+/// Where a chat sits in the Inbox. Groups follow what the agent is doing, never whether you
 /// have read it, so opening a chat changes how its row looks but not where it is.
 enum SessionGroup: Int, CaseIterable, Hashable {
     case needsInput, finished, working, quiet
@@ -37,8 +37,8 @@ enum SessionGroup: Int, CaseIterable, Hashable {
     init(_ row: SessionRow) {
         switch row.session.status {
         case .needsInput: self = .needsInput
-        // A reply you have read drifts to Quiet only after eight quiet hours.
-        case .ready: self = row.isStale ? .quiet : .finished
+        // A reply stays under Review after you read it, until you archive it.
+        case .ready: self = .finished
         case .working: self = .working
         case .idle, .unknown: self = .quiet
         }
@@ -60,17 +60,20 @@ struct RowSection: Equatable {
     let group: SessionGroup?
     let rows: [SessionRow]
     let total: Int
+    /// Replies in this group that you have already read. They stay listed but are not counted.
+    var read = 0
 }
 
 enum SidebarItem: Identifiable, Equatable {
     case allClear
-    case header(SessionGroup, count: Int)
+    /// `count` is what still asks something of you; `read` is how many read replies sit below it.
+    case header(SessionGroup, count: Int, read: Int)
     case row(SessionRow, position: Int)
 
     var id: String {
         switch self {
         case .allClear: "all-clear"
-        case .header(let group, _): group.headerID
+        case .header(let group, _, _): group.headerID
         case .row(let row, _): row.id
         }
     }
@@ -119,15 +122,35 @@ final class SessionStore: ObservableObject {
         return activeRows.lazy.filter(filter.includes).count
     }
 
-    /// Inbox and Later show their rows grouped by what they ask of you. The Inbox leaves out idle
-    /// chats; search, ⌘K and Favorites still find them, and new activity brings them back.
-    var groupsRows: Bool { filter == .all || filter == .later }
+    /// The Inbox groups its rows by what they ask of you and leaves out idle chats. Favorites, Later
+    /// and search results are flat lists, where each row carries its own status icon; search, ⌘K and
+    /// Favorites still find idle chats, and new activity brings them back.
+    var groupsRows: Bool { filter == .all && !isSearching }
 
     var sections: [RowSection] {
         var visible = matchingRows
         guard groupsRows else {
-            // Favorites keep the order you added them in, so their numbers never change.
-            if filter != .archive, filter != .favorites, let nextAction = visible.indices.lazy
+            if isSearching {
+                // Best match first, as in ⌘K. Ties follow the list's own order: the Inbox's groups, or
+                // the order Favorites, Later and Archive already have.
+                let terms = query.lowercased().split(whereSeparator: \.isWhitespace).map(String.init)
+                let inbox = filter == .all
+                let scored = visible.enumerated().map { (score: Self.matchScore($0.element.session.title, terms: terms),
+                                                         offset: $0.offset, row: $0.element) }
+                visible = scored.sorted { a, b in
+                    if a.score != b.score { return a.score < b.score }
+                    guard inbox else { return a.offset < b.offset }
+                    let first = SessionGroup(a.row), second = SessionGroup(b.row)
+                    if first != second { return first.rawValue < second.rawValue }
+                    return order(within: first)(a.row, b.row)
+                }.map(\.row)
+            } else if filter == .later {
+                // Soonest back first; chats with no time come last, most recently saved first.
+                let timed = visible.compactMap { row in returnDate(for: row.id).map { (row, $0) } }
+                    .sorted { $0.1 != $1.1 ? $0.1 < $1.1 : $0.0.id < $1.0.id }.map(\.0)
+                visible = timed + visible.filter { returnDate(for: $0.id) == nil }
+            } else if filter != .archive, filter != .favorites, let nextAction = visible.indices.lazy
+                // Favorites keep the order you added them in, so their numbers never change.
                 .filter({ Self.needsAction(visible[$0]) })
                 .min(by: { Self.actionFirst(visible[$0], visible[$1]) }), nextAction > 0 {
                 let row = visible.remove(at: nextAction)
@@ -136,13 +159,12 @@ final class SessionStore: ObservableObject {
             return visible.isEmpty ? [] : [RowSection(group: nil, rows: visible, total: visible.count)]
         }
         var sections: [RowSection] = []
-        // Dictionary(grouping:) keeps each group's rows in their incoming order, which Later relies on.
         let grouped = Dictionary(grouping: visible, by: SessionGroup.init)
         for group in SessionGroup.allCases {
-            guard let members = grouped[group], !members.isEmpty,
-                  group != .quiet || filter != .all || isSearching else { continue }
-            let ordered = filter == .later ? members : members.sorted(by: order(within: group))
-            sections.append(RowSection(group: group, rows: ordered, total: ordered.count))
+            guard let members = grouped[group], !members.isEmpty, group != .quiet else { continue }
+            let ordered = members.sorted(by: order(within: group))
+            sections.append(RowSection(group: group, rows: ordered, total: ordered.count,
+                                       read: ordered.lazy.filter(Self.isReadReply).count))
         }
         return sections
     }
@@ -163,7 +185,7 @@ final class SessionStore: ObservableObject {
         var position = 0
         for section in sections {
             if let group = section.group {
-                items.append(.header(group, count: section.total))
+                items.append(.header(group, count: section.total - section.read, read: section.read))
             }
             for row in section.rows {
                 position += 1
@@ -297,6 +319,8 @@ final class SessionStore: ObservableObject {
         let changed = nextQuery != searchQuery
         if changed { searchQuery = nextQuery }
         syncSelection(resetNumber: changed)
+        // Results are ordered best match first, so ↵ should open the top one as you type.
+        if changed, let nextQuery, !nextQuery.isEmpty, let top = shownRows.first { selectedID = top.id }
         if changed { onRowsChanged?() }
     }
 
@@ -330,7 +354,7 @@ final class SessionStore: ObservableObject {
     }
 
     private enum LastChange {
-        case archive(String)
+        case archive([String])
         case later(String, previous: SavedSession?)
     }
 
@@ -420,7 +444,7 @@ final class SessionStore: ObservableObject {
                 history.archivedWhileWorking?.remove(id)
                 if history.archivedWhileWorking?.isEmpty == true { history.archivedWhileWorking = nil }
             }
-            if case .archive(let last) = lastChange, last == id { lastChange = nil }
+            forgetArchive(of: id)
         }
         for id in history.dismissed.keys where history.savedSessions?[id] == nil {
             if let session = combined[id] {
@@ -559,17 +583,46 @@ final class SessionStore: ObservableObject {
         var midRun = history.archivedWhileWorking ?? []
         if current.status == .working { midRun.insert(current.id) } else { midRun.remove(current.id) }
         history.archivedWhileWorking = midRun.isEmpty ? nil : midRun
-        lastChange = .archive(current.id)
+        lastChange = .archive([current.id])
         rebuild()
         selectRow(afterRemoving: index)
         persist()
+    }
+
+    /// A finished reply you have already read. It stays under Review until you archive it.
+    static func isReadReply(_ row: SessionRow) -> Bool {
+        row.session.status == .ready && !row.needsReview
+    }
+
+    /// How many read replies the Inbox holds: what "archive all read" would clear.
+    var readReplyCount: Int { activeRows.lazy.filter(Self.isReadReply).count }
+
+    /// Archives every read reply in the Inbox in one step, as one change to undo. Returns how many.
+    @discardableResult
+    func archiveRead() -> Int {
+        let read = activeRows.filter(Self.isReadReply).map(\.session)
+        guard !read.isEmpty else { return 0 }
+        // Rebuilding moves a vanished selection to the top; put it back near where it was instead.
+        let index = read.contains { $0.id == selectedID } ? shownRows.firstIndex { $0.id == selectedID } : nil
+        let now = Date()
+        for session in read {
+            saveSession(SavedSession(snapshot: Self.snapshot(of: session), deferredAt: nil), id: session.id)
+            history.dismissed[session.id] = now
+            history.archivedWhileWorking?.remove(session.id)
+        }
+        if history.archivedWhileWorking?.isEmpty == true { history.archivedWhileWorking = nil }
+        lastChange = .archive(read.map(\.id))
+        rebuild()
+        selectRow(afterRemoving: index)
+        persist()
+        return read.count
     }
 
     @discardableResult
     func restoreArchived(_ session: Session) -> Bool {
         guard history.dismissed.removeValue(forKey: session.id) != nil else { return false }
         let index = shownRows.firstIndex { $0.id == session.id }
-        if case .archive(let id) = lastChange, id == session.id { lastChange = nil }
+        forgetArchive(of: session.id)
         pruneRecoveredSnapshots(in: latest)
         rebuild()
         selectRow(afterRemoving: index)
@@ -669,8 +722,9 @@ final class SessionStore: ObservableObject {
         guard let lastChange else { return false }
         self.lastChange = nil
         switch lastChange {
-        case .archive(let id):
-            guard history.dismissed.removeValue(forKey: id) != nil else { return false }
+        case .archive(let ids):
+            let restored = ids.filter { history.dismissed.removeValue(forKey: $0) != nil }
+            guard !restored.isEmpty else { return false }
             pruneRecoveredSnapshots(in: latest)
         case .later(let id, let previous):
             if previous == nil, latest[id] == nil, let saved = history.savedSessions?[id] {
@@ -682,6 +736,13 @@ final class SessionStore: ObservableObject {
         rebuild()
         persist()
         return true
+    }
+
+    /// Drops a chat from the change Undo would reverse, once it has left Archive some other way.
+    private func forgetArchive(of id: String) {
+        guard case .archive(let ids) = lastChange, ids.contains(id) else { return }
+        let rest = ids.filter { $0 != id }
+        lastChange = rest.isEmpty ? nil : .archive(rest)
     }
 
     func restoreHidden() {
@@ -758,7 +819,7 @@ final class SessionStore: ObservableObject {
         let lastActivity = max(session.updatedAt, session.completedAt ?? .distantPast)
         return SessionRow(session: session, needsReview: needsReview,
                           isManuallyUnread: history.manuallyUnread?.contains(session.id) == true,
-                          isStale: (session.status == .idle || session.status == .ready) && !needsReview &&
+                          isStale: session.status == .idle && !needsReview &&
                             lastActivity > .distantPast && lastActivity <= staleBefore)
     }
 

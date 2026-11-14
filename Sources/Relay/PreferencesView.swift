@@ -67,7 +67,7 @@ struct PreferencesView: View {
                     }
                 }
             }
-            SettingsGroup(title: "Session summaries") {
+            SettingsGroup(title: "Chat summaries") {
                 settingToggle("Summarize recent chat text",
                               detail: "See what changed and what’s next. Chat text stays on this Mac.",
                               value: $model.localPreviewsEnabled)
@@ -77,7 +77,7 @@ struct PreferencesView: View {
                               value: Binding(get: { model.launchAtLogin }, set: model.setLaunchAtLogin))
             }
             if store.hiddenCount > 0 {
-                SettingsGroup(title: "Archived sessions") {
+                SettingsGroup(title: "Archived chats") {
                     SettingsRow {
                         SettingsLabel(title: "\(store.hiddenCount) archived")
                     } control: {
@@ -134,7 +134,7 @@ struct PreferencesView: View {
                     .font(.system(size: 12, weight: .medium))
             }
             .padding(.horizontal, 2)
-            Button("Refresh sessions", systemImage: "arrow.clockwise", action: model.refreshSources)
+            Button("Refresh chats", systemImage: "arrow.clockwise", action: model.refreshSources)
                 .controlSize(.small)
                 .padding(.horizontal, 2)
         }
@@ -144,7 +144,7 @@ struct PreferencesView: View {
         let agents = store.availableGrokSessions
         let markedCount = agents.filter { store.mainGrokIDs.contains($0.id) }.count
         return SettingsGroup(title: "Grok Bot") {
-            sourceToggle(.grok, title: "Track sessions")
+            sourceToggle(.grok, title: "Track chats")
             SettingsDivider()
             SettingsRow {
                 SettingsLabel(title: "Show in Relay")
@@ -229,11 +229,16 @@ struct PreferencesView: View {
                 SettingsDivider()
                 shortcutRow("Archive the selected chat", key: "E")
                 SettingsDivider()
+                shortcutRow("Archive all read chats", detail: "Clears every reply you have already read out of the Inbox.",
+                            key: "⇧E")
+                SettingsDivider()
+                shortcutRow("Restore a chat from Archive", key: "R")
+                SettingsDivider()
                 shortcutRow("Move to or from Later", key: "L")
                 SettingsDivider()
                 shortcutRow("Later until a time", detail: "The chat comes back by itself, marked unread.", key: "H")
                 SettingsDivider()
-                shortcutRow("Star or unstar a chat", detail: "Starred chats stay put and appear under Favorites.", key: "F")
+                shortcutRow("Favorite or unfavorite a chat", detail: "A favorite stays where it is and also appears under Favorites.", key: "F")
                 SettingsDivider()
                 shortcutRow("Search chats", key: "/")
                 SettingsDivider()
@@ -274,12 +279,12 @@ struct PreferencesView: View {
         DisclosureGroup(isExpanded: $showsStatusGuide) {
             VStack(alignment: .leading, spacing: 9) {
                 statusDefinition("Needs you", "An approval, decision, or answer is pending.")
-                statusDefinition("Review", "The agent handed work back. Unread ones are new.")
-                statusDefinition("Read", "The latest update was opened or marked read.")
+                statusDefinition("Review", "The agent handed work back and you have not read it yet.")
+                statusDefinition("Read", "A reply you opened or marked read. It stays under Review, dimmed, until you archive it.")
                 statusDefinition("Working", "The source reports an active turn.")
                 statusDefinition("Idle", "Nothing is happening. Idle chats stay out of the Inbox until new activity.")
                 statusDefinition("Inactive", "An idle chat with no reported activity for eight hours.")
-                statusDefinition("Status unavailable", "Relay has no status signal for this session.")
+                statusDefinition("Status unavailable", "Relay has no status signal for this chat.")
             }
             .padding(.top, 10)
         } label: {

@@ -45,6 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         overlay.onHide = { [weak self] in self?.hide($0) }
         overlay.onLater = { [weak self] in self?.toggleLater($0) }
         overlay.onRestoreArchived = { [weak self] in self?.restoreArchived($0) }
+        overlay.onArchiveRead = { [weak self] in self?.archiveRead() }
         overlay.onUndo = { [weak self] in self?.undoHide() }
         overlay.onShowSettings = { [weak self] in self?.showSettings() }
         preferences.onEdgeVisibility = { [weak overlay] in overlay?.setEdgeVisible($0) }
@@ -54,7 +55,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         item.button?.image = NSImage(systemSymbolName: "rectangle.righthalf.inset.filled", accessibilityDescription: "Relay")
         item.button?.image?.isTemplate = true
-        item.button?.toolTip = "Relay sessions"
+        item.button?.toolTip = "Relay chats"
         item.menu = makeStatusMenu()
         statusItem = item
 
@@ -98,9 +99,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         menu.autoenablesItems = false
         let entries: [(String, Selector, String)] = [
-            ("Show sessions", #selector(showSessions), ""),
+            ("Show chats", #selector(showSessions), ""),
             ("Show Archive", #selector(showArchive), ""),
-            ("Add session link…", #selector(addSessionLink), ""),
+            ("Add chat link…", #selector(addSessionLink), ""),
             ("Settings…", #selector(showSettings), ","),
         ]
         for (title, action, key) in entries {
@@ -184,7 +185,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if let session = store.removeTarget(allowSelection: overlay?.isShowing ?? false) {
                 hide(session)
             } else {
-                overlay?.report("Open Relay and select a session to archive")
+                overlay?.report("Open Relay and select a chat to archive")
             }
         default:
             overlay?.useNumberShortcut(shortcut.rawValue)
@@ -198,7 +199,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if RouteOpener.open(session.route) {
             store.acknowledge(session)
         } else {
-            overlay?.report("Couldn’t open this \(session.source.name) session")
+            overlay?.report("Couldn’t open this \(session.source.name) chat")
         }
     }
 
@@ -215,7 +216,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func restoreArchived(_ session: Session) {
-        if store.restoreArchived(session) { overlay?.report("Session restored") }
+        if store.restoreArchived(session) { overlay?.report("Restored “\(session.title)” to the Inbox") }
+    }
+
+    private func archiveRead() {
+        let count = store.archiveRead()
+        overlay?.report(count == 0 ? "No read chats to archive"
+                                   : "Archived \(count) read \(count == 1 ? "chat" : "chats")", undoable: count > 0)
     }
 
     @objc private func showSessions() { overlay?.show(keyboard: true) }
@@ -261,10 +268,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func addSessionLink() {
-        let alert = makeAlert("Add a session link",
+        let alert = makeAlert("Add a chat link",
                               "Use a chat’s share or deep link to give it a shortcut in Relay.")
         let title = NSTextField(string: "")
-        title.placeholderString = "Session name"
+        title.placeholderString = "Chat name"
         let link = NSTextField(string: "")
         link.placeholderString = "Chat URL"
         let sources = NSPopUpButton()
@@ -277,7 +284,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         link.widthAnchor.constraint(equalTo: title.widthAnchor).isActive = true
         stack.frame = CGRect(origin: .zero, size: stack.fittingSize)
         alert.accessoryView = stack
-        alert.addButton(withTitle: "Add session")
+        alert.addButton(withTitle: "Add chat")
         alert.addButton(withTitle: "Cancel")
         alert.window.initialFirstResponder = title
         guard alert.runModal() == .alertFirstButtonReturn else { return }
@@ -288,7 +295,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard !label.isEmpty, let url = URL(string: address), let scheme = url.scheme?.lowercased(),
               supported.contains(scheme), (scheme != "https" || url.host != nil),
               Source.allCases.indices.contains(sources.indexOfSelectedItem) else {
-            overlay?.report("Enter a session name and valid chat URL")
+            overlay?.report("Enter a chat name and a valid URL")
             return
         }
         let source = Source.allCases[sources.indexOfSelectedItem]
