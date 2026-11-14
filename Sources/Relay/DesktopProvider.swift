@@ -9,6 +9,7 @@ final class DesktopProvider: @unchecked Sendable {
     private var grokRosterURL: URL?
     private var grokRosterStamp: FileStamp?
     private var grokRows: [GrokRow] = []
+    private var grokTails: [String: (stamp: FileStamp, tail: GrokTail)] = [:]
 
     init(home: URL = FileManager.default.homeDirectoryForCurrentUser, defaults: UserDefaults = .standard) {
         self.home = home
@@ -136,19 +137,21 @@ final class DesktopProvider: @unchecked Sendable {
             }
         }
         guard grokRosterURL == url else { return [] }
+        let now = Date()
+        let prefix = "sand.client.slice.account.\(account)."
         return grokRows.compactMap { row in
             guard Self.validAgentID(row.id), row.isHiddenFromSidebar != true, row.isRemovedFromSidebar != true else { return nil }
             let activity = max(row.localActivityAt ?? 0, row.lastActivityAt ?? 0)
             let updatedAt = Self.milliseconds(activity > 0 ? activity : (row.createdAt ?? 0))
             guard updatedAt >= cutoff else { return nil }
-            let status: SessionStatus
-            if row.awaitingUserResponse != nil {
-                status = .needsInput
-            } else if row.hasUnread == true || (row.unreadCount ?? 0) > 0 || (row.unreadThreadCount ?? 0) > 0 {
-                status = .ready
-            } else {
-                status = .idle
-            }
+            // Grok Bot keeps no running flag on disk, so read the end of a recently active transcript.
+            let tail = now.timeIntervalSince(updatedAt) < Self.grokUserTurnWindow
+                ? grokTail(at: root.appending(path: Self.grokBlobName(prefix + "transcript.replicas." + row.id)), id: row.id)
+                : nil
+            let status = Self.grokStatus(
+                awaitingInput: row.awaitingUserResponse != nil,
+                unread: row.hasUnread == true || (row.unreadCount ?? 0) > 0 || (row.unreadThreadCount ?? 0) > 0,
+                tail: tail, now: now)
             return Session(
                 id: "grok:\(row.id)", source: .grok,
                 title: Self.displayTitle(row.name, fallback: Self.displayTitle(row.title, fallback: "Grok Bot chat")),
@@ -158,6 +161,51 @@ final class DesktopProvider: @unchecked Sendable {
                 completedAt: status == .ready ? updatedAt : nil
             )
         }
+    }
+
+    /// How long a sent message counts as the agent working on it, and how long a progress note does.
+    static let grokUserTurnWindow: TimeInterval = 30 * 60
+    static let grokProgressWindow: TimeInterval = 15 * 60
+
+    static func grokStatus(awaitingInput: Bool, unread: Bool, tail: GrokTail?, now: Date) -> SessionStatus {
+        if awaitingInput { return .needsInput }
+        if let tail {
+            let age = now.timeIntervalSince(tail.date)
+            // You sent the newest message: the agent has picked up your request.
+            if tail.fromUser && age < grokUserTurnWindow { return .working }
+            // The agent's newest message says it is still going, such as "The search is running".
+            if !tail.fromUser, age < grokProgressWindow, let text = tail.text, soundsInProgress(text) { return .working }
+        }
+        return unread ? .ready : .idle
+    }
+
+    /// True for an interim note that promises more, not for a final answer.
+    static func soundsInProgress(_ text: String) -> Bool {
+        let text = text.lowercased().replacingOccurrences(of: "’", with: "'")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, text.count <= 600 else { return false }
+        let openings = ["i'm ", "i am ", "i'll ", "i will ", "let me ", "working on", "looking into", "checking ",
+                        "searching ", "digging ", "pulling ", "moving ", "on it", "one moment", "give me a",
+                        "hang tight", "starting ", "kicking off", "running "]
+        if openings.contains(where: text.hasPrefix) { return true }
+        let markers = ["is running", "still running", "will take a few", "take a few minutes", "in the background",
+                       "i'll send", "i'll follow up", "i'll let you know", "get back to you", "be right back",
+                       "still working"]
+        return markers.contains(where: text.contains)
+    }
+
+    private func grokTail(at url: URL, id: String) -> GrokTail? {
+        guard let stamp = FileStamp(url: url) else { return nil }
+        if let cached = grokTails[id], cached.stamp == stamp { return cached.tail }
+        guard let transcript: GrokEnvelope<GrokTranscriptTail> = Self.decodeBlob(at: url, maximumSize: 4_000_000),
+              let last = transcript.value.entries.last(where: { $0.kind == "message" || $0.kind == "send-message" }),
+              let timestamp = last.timestampMs
+        else { return nil }
+        let tail = GrokTail(fromUser: last.kind == "message" && last.role == "user",
+                            text: last.message?.content ?? last.content,
+                            date: Self.milliseconds(timestamp))
+        grokTails[id] = (stamp, tail)
+        return tail
     }
 
     private func instinctSession() -> [Session] {
@@ -320,6 +368,45 @@ private struct CursorCloudRow: Decodable {
     let lastMessageActivityAtMs: Int64?
     let updatedAt: Int64?
     let createdAt: Int64?
+}
+
+/// The newest message in a Grok Bot transcript.
+struct GrokTail: Equatable {
+    let fromUser: Bool
+    let text: String?
+    let date: Date
+}
+
+private struct GrokTranscriptTail: Decodable {
+    let entries: [Entry]
+
+    struct Entry: Decodable {
+        struct Outgoing: Decodable {
+            let content: String?
+            init(from decoder: Decoder) throws {
+                let fields = try? decoder.container(keyedBy: CodingKeys.self)
+                content = try? fields?.decodeIfPresent(String.self, forKey: .content)
+            }
+            private enum CodingKeys: String, CodingKey { case content }
+        }
+
+        let kind: String
+        let role: String?
+        let content: String?
+        let message: Outgoing?
+        let timestampMs: Int64?
+
+        init(from decoder: Decoder) throws {
+            let fields = try decoder.container(keyedBy: CodingKeys.self)
+            kind = (try? fields.decode(String.self, forKey: .kind)) ?? ""
+            role = try? fields.decodeIfPresent(String.self, forKey: .role)
+            content = try? fields.decodeIfPresent(String.self, forKey: .content)
+            message = try? fields.decodeIfPresent(Outgoing.self, forKey: .message)
+            timestampMs = try? fields.decodeIfPresent(Int64.self, forKey: .timestampMs)
+        }
+
+        private enum CodingKeys: String, CodingKey { case kind, role, content, message, timestampMs }
+    }
 }
 
 private struct GrokEnvelope<Value: Decodable>: Decodable {

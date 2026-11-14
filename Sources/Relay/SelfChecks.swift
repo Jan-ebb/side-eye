@@ -109,6 +109,7 @@ enum SelfChecks {
         checkArchiveReturns(now: now)
         checkGrouping(now: now)
         checkPalette(now: now)
+        checkGrokWorking(now: now)
 
         let ordered = SessionStore(defaults: nil)
         let older = sample("older", .codex, "Older completion", .ready, now,
@@ -624,6 +625,26 @@ enum SelfChecks {
         reloaded.setQuietCollapsed(false)
         precondition(reloaded.session(in: 1)?.id == input.id)
         precondition(reloaded.undoHide() && reloaded.shownRows.isEmpty && reloaded.count(for: .later) == 2)
+    }
+
+    private static func checkGrokWorking(now: Date) {
+        let sent = GrokTail(fromUser: true, text: "search the archive in depth", date: now.addingTimeInterval(-20))
+        precondition(DesktopProvider.grokStatus(awaitingInput: false, unread: false, tail: sent, now: now) == .working,
+                     "A message you just sent should show the agent working")
+        let progress = GrokTail(fromUser: false, text: "The deep archive search is running and will take a few minutes.",
+                                date: now.addingTimeInterval(-60))
+        precondition(DesktopProvider.grokStatus(awaitingInput: false, unread: true, tail: progress, now: now) == .working,
+                     "A progress note should keep the agent working")
+        precondition(DesktopProvider.grokStatus(awaitingInput: false, unread: true, tail: progress,
+                                                now: now.addingTimeInterval(20 * 60)) == .ready,
+                     "A progress note with nothing after it should stop counting as work")
+        let answer = GrokTail(fromUser: false, text: "I've moved the pharmacy stop to your walk home. Here's the new plan for today.",
+                              date: now.addingTimeInterval(-60))
+        precondition(DesktopProvider.grokStatus(awaitingInput: false, unread: true, tail: answer, now: now) == .ready)
+        precondition(DesktopProvider.grokStatus(awaitingInput: true, unread: true, tail: sent, now: now) == .needsInput)
+        precondition(DesktopProvider.soundsInProgress("Moving the pharmacy stop to the walk home now.")
+                     && DesktopProvider.soundsInProgress("I’ll dig through the archive for anything that's missing.")
+                     && !DesktopProvider.soundsInProgress("Done. Your calendar has the dentist at 3."))
     }
 
     private static func checkArchiveReturns(now: Date) {
