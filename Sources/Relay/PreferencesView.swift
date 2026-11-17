@@ -91,8 +91,10 @@ struct PreferencesView: View {
             }
             SettingsGroup(title: "Summaries") {
                 settingToggle("Summarize recent chat text",
-                              detail: "See what changed and what’s next. Chat text stays on this Mac.",
-                              value: $model.localPreviewsEnabled)
+                              detail: LocalSummaryEngine.isInstalled
+                                  ? "See what changed and what’s next. Chat text stays on this Mac."
+                                  : "Needs a local model and llama.cpp, which this copy of Relay doesn’t have. The README says how to add them.",
+                              enabled: LocalSummaryEngine.isInstalled, value: $model.localPreviewsEnabled)
             }
             if store.hiddenCount > 0 {
                 SettingsGroup(title: "Archive") {
@@ -217,20 +219,8 @@ struct PreferencesView: View {
     /// Options of one app sit under its row, starting where its name starts.
     private static let optionInset: CGFloat = 13 + 20 + 10
 
-    /// What the last scan found for an app, or why it found nothing.
-    private func sourceStatus(_ source: Source) -> String? {
-        guard isOn(source) else { return nil }
-        if model.sourcePresent[source] == false { return "Not found on this Mac" }
-        if store.isLoading { return "Looking for chats…" }
-        let found = store.foundCount(for: source)
-        if found == 0 { return source == .cursor || source == .grok ? "No chats in the last 48 hours" : "No recent chats" }
-        let chats = "\(found) \(found == 1 ? "chat" : "chats")"
-        guard source == .grok, store.grokMainOnly else { return chats }
-        return "\(chats), \(store.foundCount(for: .grok, mainOnly: true)) from main agents"
-    }
-
     private func sourceRow(_ source: Source) -> some View {
-        let status = sourceStatus(source)
+        let status = model.status(for: source)
         return SettingsRow {
             HStack(spacing: 10) {
                 SourceAppIcon(source: source, size: 20)
@@ -399,7 +389,7 @@ struct PreferencesView: View {
     }
 
     private func settingToggle(_ title: String, detail: String? = nil, inset: CGFloat = 13, compact: Bool = false,
-                               flush: Bool = false, value: Binding<Bool>) -> some View {
+                               flush: Bool = false, enabled: Bool = true, value: Binding<Bool>) -> some View {
         SettingsRow(compact: compact, inset: inset, flush: flush) {
             SettingsLabel(title: title, detail: detail)
                 .accessibilityHidden(true)
@@ -410,6 +400,7 @@ struct PreferencesView: View {
                 .controlSize(.small)
                 .accessibilityLabel(title)
                 .accessibilityHint(detail ?? "")
+                .disabled(!enabled)
         }
     }
 
@@ -455,7 +446,7 @@ struct PreferencesView: View {
     }
 }
 
-private struct SettingsGroup<Accessory: View, Content: View>: View {
+struct SettingsGroup<Accessory: View, Content: View>: View {
     let title: String
     @ViewBuilder let accessory: Accessory
     @ViewBuilder let content: Content
@@ -498,7 +489,7 @@ extension SettingsGroup where Accessory == EmptyView {
 
 /// A row. `inset` moves an option under the name of the app it belongs to; `flush` is for rows inside
 /// a disclosure, which already has the card's padding.
-private struct SettingsRow<Label: View, Control: View>: View {
+struct SettingsRow<Label: View, Control: View>: View {
     var compact = false
     var inset: CGFloat = 13
     var flush = false
@@ -522,7 +513,7 @@ private struct SettingsRow<Label: View, Control: View>: View {
     }
 }
 
-private struct SettingsDivider: View {
+struct SettingsDivider: View {
     var inset: CGFloat = 13
 
     var body: some View {
@@ -584,7 +575,7 @@ private struct SettingsDisclosure<Content: View>: View {
     }
 }
 
-private struct SettingsLabel: View {
+struct SettingsLabel: View {
     let title: String
     var detail: String? = nil
 
@@ -603,7 +594,7 @@ private struct SettingsLabel: View {
 }
 
 /// One key, drawn like a key so a row of them reads as a combination.
-private struct ShortcutKeycap: View {
+struct ShortcutKeycap: View {
     let text: String
 
     var body: some View {

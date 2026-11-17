@@ -955,7 +955,12 @@ struct SidebarView: View {
         if store.isLoading { return "Finding chats…" }
         if !store.query.isEmpty { return "No chats match" }
         switch store.filter {
-        case .all: return "Nothing in your inbox"
+        case .all:
+            switch store.emptiness {
+            case .noApps: return "No agent apps found"
+            case .noChats: return "No chats yet"
+            case .caughtUp: return "Nothing in your inbox"
+            }
         case .favorites: return "No favorites yet"
         case .needsInput: return "Nothing needs you"
         case .toReview: return "Nothing to review"
@@ -972,9 +977,16 @@ struct SidebarView: View {
         }
         switch store.filter {
         case .all:
-            return store.grokMainOnly && store.mainGrokIDs.isEmpty
-                ? "Mark your main Grok agents in Settings."
-                : "Chats land here when an agent needs you, finishes or starts work. Press / to find any other chat."
+            switch store.emptiness {
+            case .noApps:
+                return "Relay watches Codex, Claude Code, Cursor and Grok Bot. Start a chat in one of them and it appears here."
+            case .noChats:
+                return "Start a chat in one of your agent apps and it appears here within a few seconds."
+            case .caughtUp:
+                return store.grokMainOnly && store.mainGrokIDs.isEmpty
+                    ? "Mark your main Grok agents in Settings."
+                    : "Chats land here when an agent needs you, finishes or starts work. Press / to find any other chat."
+            }
         case .favorites: return "Hover a chat and click its star, or select it and press F."
         case .needsInput: return "Questions and approvals will appear here."
         case .toReview: return "Unread updates will appear here."

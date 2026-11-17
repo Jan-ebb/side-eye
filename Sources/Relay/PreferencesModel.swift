@@ -61,7 +61,7 @@ final class PreferencesModel: ObservableObject {
         launchAtLogin = loginStatus == .enabled || loginStatus == .requiresApproval
         hasMultipleDisplays = NSScreen.screens.count > 1
         instinctConfigured = defaults?.string(forKey: "instinctRecipient")?.isEmpty == false
-        sourcePresent = Dictionary(uniqueKeysWithValues: Source.allCases.map { ($0, Self.hasData($0)) })
+        sourcePresent = Dictionary(uniqueKeysWithValues: Source.allCases.map { ($0, $0.hasLocalData) })
         sourceEnabled = Dictionary(uniqueKeysWithValues: Source.allCases.map { ($0, $0.isEnabled(in: defaults)) })
     }
 
@@ -92,19 +92,16 @@ final class PreferencesModel: ObservableObject {
         refreshSources()
     }
 
-    /// True when the app's own data folder exists, which is where Relay finds its chats.
-    private static func hasData(_ source: Source) -> Bool {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        let support = home.appending(path: "Library/Application Support")
-        let folders: [URL]
-        switch source {
-        case .codex: folders = [home.appending(path: ".codex")]
-        case .claude: folders = [home.appending(path: ".claude"), support.appending(path: "Claude/claude-code-sessions")]
-        case .cursor: folders = [support.appending(path: "Cursor")]
-        case .grok: folders = [support.appending(path: "Grok Bot")]
-        case .instinct: return true
-        }
-        return folders.contains { FileManager.default.fileExists(atPath: $0.path) }
+    /// What the last scan found for an app, or why it found nothing. Nil while the app is off.
+    func status(for source: Source) -> String? {
+        guard sourceEnabled[source] == true else { return nil }
+        if sourcePresent[source] == false { return "Not found on this Mac" }
+        if store.isLoading { return "Looking for chats…" }
+        let found = store.foundCount(for: source)
+        if found == 0 { return source == .cursor || source == .grok ? "No chats in the last 48 hours" : "No recent chats" }
+        let chats = "\(found) \(found == 1 ? "chat" : "chats")"
+        guard source == .grok, store.grokMainOnly else { return chats }
+        return "\(chats), \(store.foundCount(for: .grok, mainOnly: true)) from main agents"
     }
 
     func moveOverlay() { onAction?(.moveOverlay) }

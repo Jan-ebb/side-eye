@@ -7,7 +7,11 @@ actor LocalSummaryEngine {
     static let modelFileName = "RelaySummary"
     private static let maximumSummaryLength = 135
     private static let idleSeconds: Double = 45
-    private static let serverURL = URL(fileURLWithPath: "/opt/homebrew/bin/llama-server")
+    /// llama.cpp's server, where Homebrew puts it on Apple silicon or on Intel.
+    private static let serverURL = ["/opt/homebrew/bin/llama-server", "/usr/local/bin/llama-server"]
+        .map { URL(fileURLWithPath: $0) }
+        .first { FileManager.default.isExecutableFile(atPath: $0.path) }
+        ?? URL(fileURLWithPath: "/opt/homebrew/bin/llama-server")
     private let modelURL: URL?
     private let serverURL: URL
     private let workerSlot = WorkerSlot()

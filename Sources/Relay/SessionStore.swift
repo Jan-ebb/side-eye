@@ -596,6 +596,14 @@ final class SessionStore: ObservableObject {
         defaults?.set(enabled, forKey: "grokIncludeNewAgents")
     }
 
+    /// Why the Inbox is empty for someone new: no supported app has data here, or none has a chat yet.
+    enum Emptiness { case noApps, noChats, caughtUp }
+    var emptiness: Emptiness {
+        let apps = Source.allCases.filter { $0 != .instinct && $0.isEnabled(in: defaults) }
+        if !apps.contains(where: \.hasLocalData) { return .noApps }
+        return latest.isEmpty && hiddenCount == 0 ? .noChats : .caughtUp
+    }
+
     /// How many chats the last scan found for an app, shown in Relay or not.
     func foundCount(for source: Source, mainOnly: Bool = false) -> Int {
         latest.values.lazy.filter { session in

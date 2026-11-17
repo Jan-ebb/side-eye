@@ -23,6 +23,21 @@ enum Source: String, Codable, CaseIterable, Sendable {
         }
     }
 
+    /// True when the app has left data on this Mac for Relay to read. Without it there is nothing to find.
+    var hasLocalData: Bool {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let support = home.appending(path: "Library/Application Support")
+        let folders: [URL]
+        switch self {
+        case .codex: folders = [home.appending(path: ".codex")]
+        case .claude: folders = [home.appending(path: ".claude"), support.appending(path: "Claude/claude-code-sessions")]
+        case .cursor: folders = [support.appending(path: "Cursor")]
+        case .grok: folders = [support.appending(path: "Grok Bot")]
+        case .instinct: return true
+        }
+        return folders.contains { FileManager.default.fileExists(atPath: $0.path) }
+    }
+
     var enabledKey: String { "sourceEnabled." + rawValue }
     func isEnabled(in defaults: UserDefaults?) -> Bool {
         defaults?.object(forKey: enabledKey) as? Bool ?? (self != .instinct)
