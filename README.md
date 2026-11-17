@@ -1,6 +1,48 @@
 # Relay
 
-Relay is a native macOS menu bar app for keeping parallel agent conversations within reach. The bundled build is for Apple silicon and requires macOS 14 or later. Open Relay.app and hover over the small tab on the right edge. Open Settings from the sidebar’s more button or the Relay menu bar icon.
+Relay is a macOS menu bar app that puts your agent chats from Codex, Claude Code, Cursor and Grok Bot in one list at the edge of your screen. It shows which agents need you, which have finished and which are still working, and one key takes you to the right chat.
+
+![Relay’s Inbox, with chats grouped under Needs you, Review and Working](docs/inbox.png)
+
+## Install
+
+Relay needs macOS 14 or later and runs on Apple silicon and Intel.
+
+With Homebrew:
+
+```sh
+brew tap jan-ebb/side-eye https://github.com/Jan-ebb/side-eye
+brew install --cask --no-quarantine relay
+```
+
+Or download `Relay-x.y.z.zip` from [Releases](https://github.com/Jan-ebb/side-eye/releases), unzip it and move Relay.app to Applications.
+
+Relay is not yet notarized by Apple, so macOS blocks a downloaded copy the first time. Control-click Relay.app and choose **Open**, or allow it under **System Settings → Privacy & Security**. The Homebrew command above skips this step with `--no-quarantine`.
+
+To build it yourself, install Xcode or its command-line tools and run:
+
+```sh
+git clone https://github.com/Jan-ebb/side-eye.git
+cd side-eye
+./Scripts/package.sh /Applications/Relay.app
+```
+
+## First run
+
+Relay has no Dock icon. It lives in the menu bar and as a small pill on the right edge of your screen. The first time you open it, a welcome window shows which apps it found, how to open the sidebar and what its three statuses mean. You can reopen it from the menu bar icon under **Welcome to Relay…**.
+
+- Hover the pill, or press ⌃⌥Space from any app, to open the sidebar.
+- Relay needs no permissions to start. Opening a Claude Code chat that runs in a terminal asks for Automation access once, so Relay can switch to the right tab.
+- If the Inbox is empty, it says why: no supported app was found, or none has a chat yet.
+- **Settings → Apps** shows how many chats the last scan found for each app.
+
+## Privacy
+
+Relay reads each app’s local files on your Mac to list its chats. It sends nothing anywhere: it makes no network requests, has no account and collects no analytics. Optional summaries run on a local model through a private socket on your Mac.
+
+## Using Relay
+
+Open Settings from the sidebar’s more button or the Relay menu bar icon.
 
 Drag the edge pill up or down to dock it at a different height. Relay saves its position on each display. Hover to grow the pill into the sidebar, and move away to shrink it back. Relay uses native Force Touch feedback on reveal and after a drag settles. Its animations follow the system Reduce Motion setting.
 
@@ -61,7 +103,9 @@ Scheduled Codex automation runs are hidden by default. Turn on **Include schedul
 
 ## Build and check
 
-Install Xcode or its command-line tools, then run:
+`Scripts/package.sh` builds Relay.app for this Mac. `Scripts/release.sh` builds the download: a universal app, zipped, with its checksum in `dist/`. Pushing a tag such as `v0.16.0` that matches the `VERSION` file runs the release workflow, which publishes the zip as a GitHub release and points the Homebrew cask at it. With a Developer ID in the repository secrets listed in [the workflow](.github/workflows/release.yml), the release is signed and notarized.
+
+To check a build, run:
 
 ```sh
 ./Scripts/package.sh /path/to/Relay.app
@@ -72,6 +116,10 @@ Install Xcode or its command-line tools, then run:
 
 The diagnostics report counts, route availability, and the number of summaries generated locally. Run the UI check with the main app closed so it can register the same shortcuts. Add `--pointer-check` to test the real global shortcut and pointer hover, which briefly moves the pointer.
 
-For a build with local inference, set `RELAY_SUMMARY_MODEL` to the verified GGUF file in [the model notes](ModelLicenses/RelaySummary.md) when running the packaging script. Relay uses an existing compatible `llama-server` and connects over a private Unix socket.
+Summaries are optional and off in the release download, which does not include a model. For a build with them, install llama.cpp (`brew install llama.cpp`) and set `RELAY_SUMMARY_MODEL` to the verified GGUF file in [the model notes](ModelLicenses/RelaySummary.md) when running the packaging script. Relay starts `llama-server` on demand and talks to it over a private Unix socket. Without a model, Settings says summaries are unavailable.
 
 [Linear’s design refresh](https://linear.app/now/behind-the-latest-design-refresh), [Mobbin’s navigation references](https://mobbin.com/blog/how-to-use-mobbin-mcp), and the [Wispr Flow edge bar](https://docs.wisprflow.ai/articles/1790396454-move-and-dock-the-flow-bar-on-desktop) informed the overlay. [Codex deep links](https://learn.chatgpt.com/docs/reference/commands#deep-links) and the [Claude Code agent view](https://code.claude.com/docs/en/agent-view#read-session-state-from-a-script) document the underlying entry points.
+
+## License
+
+[MIT](LICENSE).
