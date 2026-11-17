@@ -10,6 +10,9 @@ name: Release
 #   DEVELOPER_ID_NAME           "Developer ID Application: Your Name (TEAMID)"
 #   APPLE_ID, APPLE_TEAM_ID, APPLE_APP_PASSWORD   for notarization (an app-specific password)
 
+# Both workflows use GitHub's Intel macOS machines: the Apple silicon ones were too scarce to be
+# assigned within the queue limit. The release script builds for both architectures either way.
+
 on:
   push:
     tags: ["v*"]
@@ -19,7 +22,7 @@ permissions:
 
 jobs:
   release:
-    runs-on: macos-latest
+    runs-on: macos-26-intel
     env:
       DEVELOPER_ID_CERT_P12: ${{ secrets.DEVELOPER_ID_CERT_P12 }}
       DEVELOPER_ID_CERT_PASSWORD: ${{ secrets.DEVELOPER_ID_CERT_PASSWORD }}
