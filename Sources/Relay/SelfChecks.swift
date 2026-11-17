@@ -109,6 +109,7 @@ enum SelfChecks {
         checkGrouping(now: now)
         checkPalette(now: now)
         checkGrokWorking(now: now)
+        checkLegacyMigration()
 
         let ordered = SessionStore(defaults: nil)
         let older = sample("older", .codex, "Older completion", .ready, now,
@@ -695,6 +696,20 @@ enum SelfChecks {
         precondition(reloaded.session(in: 1)?.id == input.id, "Search should still find it")
         reloaded.setQuery(nil)
         precondition(reloaded.undoHide() && reloaded.shownRows.isEmpty && reloaded.count(for: .later) == 2)
+    }
+
+    private static func checkLegacyMigration() {
+        let suite = "relay.migration-self-test.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else { preconditionFailure("Missing test preferences") }
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set("kept", forKey: "existing")
+        let old: [String: Any] = ["pinnedSessionIDs": ["a", "b"], "existing": "old", "grokMainAgentsOnly": true]
+        precondition(LegacySettings.migrate(from: old, into: defaults) == 2
+                     && defaults.stringArray(forKey: "pinnedSessionIDs") == ["a", "b"]
+                     && defaults.bool(forKey: "grokMainAgentsOnly") && defaults.string(forKey: "existing") == "kept",
+                     "Settings should carry over from the old identifier without overwriting newer ones")
+        precondition(LegacySettings.migrate(from: ["later": true], into: defaults) == 0 && defaults.object(forKey: "later") == nil,
+                     "The migration should run once")
     }
 
     private static func checkGrokWorking(now: Date) {
