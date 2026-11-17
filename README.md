@@ -55,7 +55,7 @@ Completion and input nudges show the same sentence. If it finishes after the nud
 
 Relay scans local metadata about every four seconds and keeps archived chats and source settings in local preferences. The Messages query reads timestamps and delivery flags for the configured conversation. Changes to apps’ local formats can affect discovery or state reporting.
 
-To show only your main Grok Bot agents, open **Settings → Sources**, check them in the Grok Bot list, and select **Main agents** under **Show in Relay**. The sidebar shows a **Main** badge on your marked agents.
+To show only your main Grok Bot agents, open **Settings → Sources**, check as many as you like in the Grok Bot list, and select **Main agents** under **Show in Relay**. The list holds every agent in Grok Bot, including archived ones and ones with no recent chat. The sidebar shows a **Main** badge on your marked agents.
 
 Scheduled Codex automation runs are hidden by default. Turn on **Show automation runs** under **Settings → Sources** to include them in the sidebar, attention count, and nudges.
 

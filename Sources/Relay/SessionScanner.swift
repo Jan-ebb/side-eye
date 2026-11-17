@@ -11,11 +11,14 @@ final class SessionScanner: @unchecked Sendable {
     private var summaryUpdateQueued = false
     private let receive: @MainActor ([Session]) -> Void
     private let receiveSummaries: @MainActor ([Session]) -> Void
+    private let receiveGrokAgents: @MainActor ([GrokAgent]) -> Void
 
     init(receive: @escaping @MainActor ([Session]) -> Void,
-         receiveSummaries: @escaping @MainActor ([Session]) -> Void) {
+         receiveSummaries: @escaping @MainActor ([Session]) -> Void,
+         receiveGrokAgents: @escaping @MainActor ([GrokAgent]) -> Void = { _ in }) {
         self.receive = receive
         self.receiveSummaries = receiveSummaries
+        self.receiveGrokAgents = receiveGrokAgents
         summaries.observeUpdates { [weak self] in self?.queueSummaryUpdate() }
     }
 
@@ -50,7 +53,11 @@ final class SessionScanner: @unchecked Sendable {
         latestSnapshot = codexSessions.filter { includesAutomation || $0.isAutomationRun != true }
             + claudeSessions + desktop.scan()
         let snapshot = summaries.annotate(latestSnapshot)
-        DispatchQueue.main.async { [receive] in receive(snapshot) }
+        let grokAgents = desktop.grokAgents
+        DispatchQueue.main.async { [receive, receiveGrokAgents] in
+            receiveGrokAgents(grokAgents)
+            receive(snapshot)
+        }
     }
 
     private func queueSummaryUpdate() {

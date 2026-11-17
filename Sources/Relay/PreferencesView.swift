@@ -141,7 +141,7 @@ struct PreferencesView: View {
     }
 
     private var grokSettings: some View {
-        let agents = store.availableGrokSessions
+        let agents = store.availableGrokAgents
         let markedCount = agents.filter { store.mainGrokIDs.contains($0.id) }.count
         return SettingsGroup(title: "Grok Bot") {
             sourceToggle(.grok, title: "Track chats")
@@ -174,19 +174,18 @@ struct PreferencesView: View {
                 }
                 if agents.isEmpty {
                     Text(model.sourceEnabled[.grok] == true
-                         ? "No recent Grok Bot agents. Open a chat to add it here."
+                         ? "No Grok Bot agents found yet."
                          : "Turn on Grok Bot to find your agents.")
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
-                    if markedCount == 0 {
-                        Text(store.grokMainOnly
-                             ? "Check an agent to show it in Relay."
-                             : "Check the agents you want to keep when filtering.")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                    }
+                    Text(store.grokMainOnly
+                         ? "Relay shows only the agents you check. Check as many as you like."
+                         : "Check every agent to keep when you switch to Main agents.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                     VStack(alignment: .leading, spacing: 1) {
                         ForEach(agents) { agent in
                             Toggle(isOn: Binding(get: { store.mainGrokIDs.contains(agent.id) },

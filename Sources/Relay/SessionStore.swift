@@ -106,7 +106,8 @@ final class SessionStore: ObservableObject {
     @Published var palette: PaletteState?
     @Published private(set) var grokMainOnly = false
     @Published private(set) var mainGrokIDs: Set<String> = []
-    @Published private(set) var availableGrokSessions: [Session] = []
+    /// Every Grok Bot agent that can be marked as a main agent, by name.
+    @Published private(set) var availableGrokAgents: [GrokAgent] = []
 
     var onAttention: (([Session]) -> Void)?
     var onRowsChanged: (() -> Void)?
@@ -361,6 +362,7 @@ final class SessionStore: ObservableObject {
     }
 
     private let defaults: UserDefaults?
+    private var grokRoster: [GrokAgent] = []
     private var history = History()
     private var latest: [String: Session] = [:]
     private var lastChange: LastChange?
@@ -552,6 +554,13 @@ final class SessionStore: ObservableObject {
         rebuild()
     }
 
+    /// The agents in Grok Bot's own roster, including ones with no recent chat.
+    func setGrokRoster(_ agents: [GrokAgent]) {
+        guard agents != grokRoster else { return }
+        grokRoster = agents
+        rebuild()
+    }
+
     func toggleGrokMain(id: String) {
         setGrokMain(id: id, isMain: !mainGrokIDs.contains(id))
     }
@@ -559,7 +568,7 @@ final class SessionStore: ObservableObject {
     func setGrokMain(id: String, isMain: Bool) {
         var selection = mainGrokIDs
         if isMain {
-            guard latest[id]?.source == .grok, selection.insert(id).inserted else { return }
+            guard availableGrokAgents.contains(where: { $0.id == id }), selection.insert(id).inserted else { return }
         } else {
             guard selection.remove(id) != nil else { return }
         }
@@ -774,12 +783,15 @@ final class SessionStore: ObservableObject {
     func refreshPreferences() { rebuild() }
 
     private func rebuild(now: Date = Date()) {
-        let grokAgents = latest.values.filter { $0.source == .grok && history.dismissed[$0.id] == nil }
-            .sorted {
-                let titleOrder = $0.title.localizedStandardCompare($1.title)
-                return titleOrder == .orderedSame ? $0.id < $1.id : titleOrder == .orderedAscending
-            }
-        if availableGrokSessions != grokAgents { availableGrokSessions = grokAgents }
+        // Settings offers every agent in Grok Bot's roster plus any Grok chat Relay has seen, archived
+        // or not, so an agent can be marked as main before it is next active.
+        var grokTitles = Dictionary(grokRoster.map { ($0.id, $0.title) }, uniquingKeysWith: { first, _ in first })
+        for session in latest.values where session.source == .grok { grokTitles[session.id] = session.title }
+        let grokAgents = grokTitles.map { GrokAgent(id: $0.key, title: $0.value) }.sorted {
+            let titleOrder = $0.title.localizedStandardCompare($1.title)
+            return titleOrder == .orderedSame ? $0.id < $1.id : titleOrder == .orderedAscending
+        }
+        if availableGrokAgents != grokAgents { availableGrokAgents = grokAgents }
 
         returnDueChats(now: now)
         let staleBefore = now.addingTimeInterval(-Self.staleAge)

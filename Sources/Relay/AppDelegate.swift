@@ -71,6 +71,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.store.ingest(sessions)
         }, receiveSummaries: { [weak self] sessions in
             self?.store.applySummaries(from: sessions)
+        }, receiveGrokAgents: { [weak self] agents in
+            self?.store.setGrokRoster(agents)
         })
         self.scanner = scanner
         scanner.start()

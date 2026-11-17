@@ -9,6 +9,9 @@ final class DesktopProvider: @unchecked Sendable {
     private var grokRosterURL: URL?
     private var grokRosterStamp: FileStamp?
     private var grokRows: [GrokRow] = []
+    /// Every agent in Grok Bot's roster, however long ago it was active. Chats older than the scan
+    /// window are not sessions, but Settings still needs to offer their agents as main agents.
+    private(set) var grokAgents: [GrokAgent] = []
     private var grokTails: [String: (stamp: FileStamp, tail: GrokTail)] = [:]
 
     init(home: URL = FileManager.default.homeDirectoryForCurrentUser, defaults: UserDefaults = .standard) {
@@ -20,6 +23,7 @@ final class DesktopProvider: @unchecked Sendable {
         let cutoff = Date().addingTimeInterval(-Self.recentInterval)
         let cursor = Source.cursor.isEnabled(in: defaults) ? cursorSessions(since: cutoff) : []
         let grok = Source.grok.isEnabled(in: defaults) ? grokSessions(since: cutoff) : []
+        if !Source.grok.isEnabled(in: defaults) { grokAgents = [] }
         let instinct = Source.instinct.isEnabled(in: defaults) ? instinctSession() : []
         return cursor + grok + instinct
     }
@@ -131,6 +135,7 @@ final class DesktopProvider: @unchecked Sendable {
             grokRosterURL = nil
             grokRosterStamp = nil
             grokRows = []
+            grokAgents = []
             return []
         }
         let url = root.appending(path: Self.grokBlobName("sand.client.slice.account.\(account).roster.last-roster"))
@@ -138,6 +143,12 @@ final class DesktopProvider: @unchecked Sendable {
         if stamp != grokRosterStamp || url != grokRosterURL {
             if let roster: GrokEnvelope<GrokRoster> = Self.decodeBlob(at: url, maximumSize: 2_000_000) {
                 grokRows = roster.value.rows
+                grokAgents = grokRows.compactMap { row in
+                    guard Self.validAgentID(row.id), row.isHiddenFromSidebar != true,
+                          row.isRemovedFromSidebar != true else { return nil }
+                    return GrokAgent(id: "grok:\(row.id)", title: Self.displayTitle(
+                        row.name, fallback: Self.displayTitle(row.title, fallback: "Grok Bot chat")))
+                }
                 grokRosterURL = url
                 grokRosterStamp = stamp
             }

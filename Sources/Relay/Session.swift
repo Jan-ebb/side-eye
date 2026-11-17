@@ -72,6 +72,12 @@ struct Session: Identifiable, Codable, Equatable, Sendable {
     }
 }
 
+/// A Grok Bot agent Settings can offer as a main agent, whether or not it has a recent chat.
+struct GrokAgent: Identifiable, Equatable, Sendable {
+    let id: String
+    let title: String
+}
+
 struct SessionRow: Identifiable, Equatable {
     let session: Session
     let needsReview: Bool

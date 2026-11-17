@@ -144,7 +144,15 @@ enum SelfChecks {
         grokScope.toggleGrokMain(id: main.id)
         grokScope.setGrokMainOnly(true)
         precondition(Set(grokScope.rows.map(\.id)) == [main.id, newer.id])
-        precondition(Set(grokScope.availableGrokSessions.map(\.id)) == [main.id, child.id])
+        precondition(Set(grokScope.availableGrokAgents.map(\.id)) == [main.id, child.id])
+        grokScope.setGrokRoster([GrokAgent(id: "grok:old", title: "Old agent"), GrokAgent(id: main.id, title: "Main")])
+        grokScope.hide(main)
+        precondition(grokScope.availableGrokAgents.map(\.id) == [child.id, main.id, "grok:old"],
+                     "Settings should offer archived agents and agents with no recent chat")
+        grokScope.setGrokMain(id: "grok:old", isMain: true)
+        precondition(grokScope.mainGrokIDs == [main.id, "grok:old"], "Several agents can be main at once")
+        grokScope.setGrokMain(id: "grok:old", isMain: false)
+        precondition(grokScope.restoreArchived(main))
         grokScope.onAttention = { _ in preconditionFailure("Filtered Grok chats should stay out of the review queue") }
         grokScope.ingest([main, sample(child.id, .grok, child.title, .ready, now), newer])
         precondition(grokScope.nextAttention()?.id == newer.id && grokScope.count(for: .toReview) == 1)
