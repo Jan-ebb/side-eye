@@ -29,7 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             SelfChecks.diagnoseLiveSources()
             return
         }
-        let darkPreview = fixtureMode && ProcessInfo.processInfo.environment["RELAY_PREVIEW_APPEARANCE"] == "dark"
+        let darkPreview = fixtureMode && ProcessInfo.processInfo.environment["SIDE_EYE_PREVIEW_APPEARANCE"] == "dark"
         NSApp.appearance = NSAppearance(named: darkPreview ? .darkAqua : .aqua)
 
         if CommandLine.arguments.contains("--settings-check") {
@@ -42,7 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let placementDefaults = fixtureMode
-            ? UserDefaults(suiteName: "com.relay.sessions.fixture.\(ProcessInfo.processInfo.processIdentifier)")
+            ? UserDefaults(suiteName: "side-eye.fixture.\(ProcessInfo.processInfo.processIdentifier)")
             : defaults
         let overlay = OverlayController(store: store, placementDefaults: placementDefaults)
         self.overlay = overlay
@@ -58,9 +58,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         preferences.onAction = { [weak self] in self?.performPreferenceAction($0) }
 
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        item.button?.image = NSImage(systemSymbolName: "rectangle.righthalf.inset.filled", accessibilityDescription: "Relay")
+        item.button?.image = NSImage(systemSymbolName: "rectangle.righthalf.inset.filled", accessibilityDescription: "Side Eye")
         item.button?.image?.isTemplate = true
-        item.button?.toolTip = "Relay chats"
+        item.button?.toolTip = "Side Eye chats"
         item.menu = makeStatusMenu()
         statusItem = item
 
@@ -111,7 +111,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ("Show Archive", #selector(showArchive), ""),
             ("Add chat link…", #selector(addSessionLink), ""),
             ("Settings…", #selector(showSettings), ","),
-            ("Welcome to Relay…", #selector(showWelcome), ""),
+            ("Welcome to Side Eye…", #selector(showWelcome), ""),
         ]
         for (title, action, key) in entries {
             let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
@@ -119,7 +119,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             menu.addItem(item)
         }
         menu.addItem(.separator())
-        let quit = NSMenuItem(title: "Quit Relay", action: #selector(quit), keyEquivalent: "q")
+        let quit = NSMenuItem(title: "Quit Side Eye", action: #selector(quit), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
         return menu
@@ -136,20 +136,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             window = SettingsWindow(contentRect: NSRect(origin: .zero, size: size),
                                     styleMask: [.titled, .closable, .resizable],
                                     backing: .buffered, defer: false)
-            window.title = "Relay Settings"
+            window.title = "Side Eye Settings"
             window.contentMinSize = NSSize(width: 470, height: 410)
             window.isReleasedWhenClosed = false
             window.contentViewController = NSHostingController(rootView: PreferencesView(model: preferences, store: store))
             window.setContentSize(size)
             window.center()
-            if !fixtureMode { window.setFrameAutosaveName("Relay Settings") }
+            if !fixtureMode { window.setFrameAutosaveName("Side Eye Settings") }
             preferencesWindow = window
         }
         NSApp.activate()
         window.makeKeyAndOrderFront(nil)
     }
 
-    /// Opens the welcome window once, for someone who has never run Relay. Saved history means they have.
+    /// Opens the welcome window once, for someone who has never run Side Eye. Saved history means they have.
     private func showWelcomeOnFirstRun() {
         guard defaults.object(forKey: "welcomeSeen") == nil else { return }
         defaults.set(true, forKey: "welcomeSeen")
@@ -162,11 +162,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let size = WelcomeView.windowSize
             let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.titled, .closable],
                                   backing: .buffered, defer: false)
-            window.title = "Welcome to Relay"
+            window.title = "Welcome to Side Eye"
             window.isReleasedWhenClosed = false
             window.contentViewController = NSHostingController(rootView: WelcomeView(
                 model: preferences, store: store,
-                showRelay: { [weak self] in self?.overlay?.show(keyboard: true) },
+                showSideEye: { [weak self] in self?.overlay?.show(keyboard: true) },
                 done: { [weak self] in self?.welcomeWindow?.close() }))
             window.setContentSize(size)
             window.center()
@@ -221,7 +221,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if let session = store.removeTarget(allowSelection: overlay?.isShowing ?? false) {
                 hide(session)
             } else {
-                overlay?.report("Open Relay and select a chat to archive")
+                overlay?.report("Open Side Eye and select a chat to archive")
             }
         default:
             overlay?.useNumberShortcut(shortcut.rawValue)
@@ -276,7 +276,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func configureInstinct() {
         let alert = makeAlert("Connect Instinct",
-                              "Enter the phone number or email address of your one-to-one Instinct conversation in Messages. Allow Full Disk Access for Relay to detect replies.")
+                              "Enter the phone number or email address of your one-to-one Instinct conversation in Messages. Allow Full Disk Access for Side Eye to detect replies.")
         let field = NSTextField(string: defaults.string(forKey: "instinctRecipient") ?? "")
         field.placeholderString = "Phone number or email"
         field.frame.size = NSSize(width: 280, height: 24)
@@ -305,7 +305,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func addSessionLink() {
         let alert = makeAlert("Add a chat link",
-                              "Use a chat’s share or deep link to give it a shortcut in Relay.")
+                              "Use a chat’s share or deep link to give it a shortcut in Side Eye.")
         let title = NSTextField(string: "")
         title.placeholderString = "Chat name"
         let link = NSTextField(string: "")

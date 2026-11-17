@@ -1,7 +1,7 @@
 import Foundation
 
 final class SessionScanner: @unchecked Sendable {
-    private let queue = DispatchQueue(label: "Relay.session-scanner", qos: .utility)
+    private let queue = DispatchQueue(label: "SideEye.session-scanner", qos: .utility)
     private let codex = CodexProvider()
     private let claude = ClaudeProvider()
     private let desktop = DesktopProvider()

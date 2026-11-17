@@ -23,7 +23,7 @@ enum Source: String, Codable, CaseIterable, Sendable {
         }
     }
 
-    /// True when the app has left data on this Mac for Relay to read. Without it there is nothing to find.
+    /// True when the app has left data on this Mac for Side Eye to read. Without it there is nothing to find.
     var hasLocalData: Bool {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let support = home.appending(path: "Library/Application Support")

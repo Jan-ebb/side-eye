@@ -1,52 +1,52 @@
-# Relay
+# Side Eye
 
-Relay is a macOS menu bar app that puts your agent chats from Codex, Claude Code, Cursor and Grok Bot in one list at the edge of your screen. It shows which agents need you, which have finished and which are still working, and one key takes you to the right chat.
+Side Eye is a macOS menu bar app that puts your agent chats from Codex, Claude Code, Cursor and Grok Bot in one list at the edge of your screen. It shows which agents need you, which have finished and which are still working, and one key takes you to the right chat.
 
-![Relay’s Inbox, with chats grouped under Needs you, Review and Working](docs/inbox.png)
+![Side Eye’s Inbox, with chats grouped under Needs you, Review and Working](docs/inbox.png)
 
 ## Install
 
-Relay needs macOS 14 or later and runs on Apple silicon and Intel.
+Side Eye needs macOS 14 or later and runs on Apple silicon and Intel.
 
 With Homebrew:
 
 ```sh
 brew tap jan-ebb/side-eye https://github.com/Jan-ebb/side-eye
-brew install --cask --no-quarantine relay
+brew install --cask --no-quarantine side-eye
 ```
 
-Or download `Relay-x.y.z.zip` from [Releases](https://github.com/Jan-ebb/side-eye/releases), unzip it and move Relay.app to Applications.
+Or download `SideEye-x.y.z.zip` from [Releases](https://github.com/Jan-ebb/side-eye/releases), unzip it and move Side Eye.app to Applications.
 
-Relay is not yet notarized by Apple, so macOS blocks a downloaded copy the first time. Control-click Relay.app and choose **Open**, or allow it under **System Settings → Privacy & Security**. The Homebrew command above skips this step with `--no-quarantine`.
+Side Eye is not yet notarized by Apple, so macOS blocks a downloaded copy the first time. Control-click Side Eye.app and choose **Open**, or allow it under **System Settings → Privacy & Security**. The Homebrew command above skips this step with `--no-quarantine`.
 
 To build it yourself, install Xcode or its command-line tools and run:
 
 ```sh
 git clone https://github.com/Jan-ebb/side-eye.git
 cd side-eye
-./Scripts/package.sh /Applications/Relay.app
+./Scripts/package.sh "/Applications/Side Eye.app"
 ```
 
 ## First run
 
-Relay has no Dock icon. It lives in the menu bar and as a small pill on the right edge of your screen. The first time you open it, a welcome window shows which apps it found, how to open the sidebar and what its three statuses mean. You can reopen it from the menu bar icon under **Welcome to Relay…**.
+Side Eye has no Dock icon. It lives in the menu bar and as a small pill on the right edge of your screen. The first time you open it, a welcome window shows which apps it found, how to open the sidebar and what its three statuses mean. You can reopen it from the menu bar icon under **Welcome to Side Eye…**.
 
 - Hover the pill, or press ⌃⌥Space from any app, to open the sidebar.
-- Relay needs no permissions to start. Opening a Claude Code chat that runs in a terminal asks for Automation access once, so Relay can switch to the right tab.
+- Side Eye needs no permissions to start. Opening a Claude Code chat that runs in a terminal asks for Automation access once, so Side Eye can switch to the right tab.
 - If the Inbox is empty, it says why: no supported app was found, or none has a chat yet.
 - **Settings → Apps** shows how many chats the last scan found for each app.
 
 ## Privacy
 
-Relay reads each app’s local files on your Mac to list its chats. It sends nothing anywhere: it makes no network requests, has no account and collects no analytics. Optional summaries run on a local model through a private socket on your Mac.
+Side Eye reads each app’s local files on your Mac to list its chats. It sends nothing anywhere: it makes no network requests, has no account and collects no analytics. Optional summaries run on a local model through a private socket on your Mac.
 
-## Using Relay
+## Using Side Eye
 
-Open Settings from the sidebar’s more button or the Relay menu bar icon.
+Open Settings from the sidebar’s more button or the Side Eye menu bar icon.
 
-Drag the edge pill up or down to dock it at a different height. Relay saves its position on each display. Hover to grow the pill into the sidebar, and move away to shrink it back. Relay uses native Force Touch feedback on reveal and after a drag settles. Its animations follow the system Reduce Motion setting.
+Drag the edge pill up or down to dock it at a different height. Side Eye saves its position on each display. Hover to grow the pill into the sidebar, and move away to shrink it back. Side Eye uses native Force Touch feedback on reveal and after a drag settles. Its animations follow the system Reduce Motion setting.
 
-The sidebar opens with one line per chat. Press **D** or use the preview button to add a preview under every chat: its latest summary, or where it runs until a summary exists. Press **D** again to hide them all. Relay remembers your choice.
+The sidebar opens with one line per chat. Press **D** or use the preview button to add a preview under every chat: its latest summary, or where it runs until a summary exists. Press **D** again to hide them all. Side Eye remembers your choice.
 
 ## Switching
 
@@ -69,21 +69,21 @@ The sidebar opens with one line per chat. Press **D** or use the preview button 
 | ⌥↑ / ⌥↓ | Jump to the previous or next group. |
 | Tab | Switch between Inbox, Favorites and Later. |
 
-Single keys act on the list when Relay is open. Letters are commands, so typing only searches after / or inside ⌘K. Opening Relay with a keyboard shortcut shows it instantly; hovering the pill grows it out of the edge. See **Settings → Shortcuts** for shortcuts that work from other apps.
+Single keys act on the list when Side Eye is open. Letters are commands, so typing only searches after / or inside ⌘K. Opening Side Eye with a keyboard shortcut shows it instantly; hovering the pill grows it out of the edge. See **Settings → Shortcuts** for shortcuts that work from other apps.
 
-Relay has two views. The **Inbox** is where you triage: it groups chats by what the agent is doing, **Needs you**, **Review** and **Working**, each newest first, with a tinted header that stays pinned while you scroll. Reading a chat never moves it. Titles come in two styles: bold with a dot when there is something new for you, plain otherwise. Reading a chat only makes its row plain. A reply you have read stays under Review until you archive it. The Review header says how many replies are unread and offers **Archive N read chats** (⇧E) for the rest. A chat moves only when its agent asks, finishes or starts a turn, or when you archive it or move it to Later. Idle chats stay out of the Inbox; search and ⌘K still find them, and new activity brings them back. When nothing needs you, the list says so at the top. **Favorites** is the lasting list of chats you keep coming back to. Favorite a chat with F, the star that replaces its time on hover, ⌘K or the right-click menu. It keeps its place in the Inbox, and Favorites lists it in the order you added it until you unfavorite it, even after you archive it or its app stops reporting it. Up to 30. **Later** is one list ordered by when chats come back, soonest first; a chat with a return time shows it beside an alarm, and one saved without a time keeps its usual timestamp. Press H to give a chat a return time. Chats in Later stay out of the attention count and nudges until you move them back. Status shows once per view, always in words: group headers in the Inbox, and the status written on each row in Favorites, Later, search results and ⌘K. Each tab shows how many chats it lists. The active tab stays selected between sidebar openings.
+Side Eye has two views. The **Inbox** is where you triage: it groups chats by what the agent is doing, **Needs you**, **Review** and **Working**, each newest first, with a tinted header that stays pinned while you scroll. Reading a chat never moves it. Titles come in two styles: bold with a dot when there is something new for you, plain otherwise. Reading a chat only makes its row plain. A reply you have read stays under Review until you archive it. The Review header says how many replies are unread and offers **Archive N read chats** (⇧E) for the rest. A chat moves only when its agent asks, finishes or starts a turn, or when you archive it or move it to Later. Idle chats stay out of the Inbox; search and ⌘K still find them, and new activity brings them back. When nothing needs you, the list says so at the top. **Favorites** is the lasting list of chats you keep coming back to. Favorite a chat with F, the star that replaces its time on hover, ⌘K or the right-click menu. It keeps its place in the Inbox, and Favorites lists it in the order you added it until you unfavorite it, even after you archive it or its app stops reporting it. Up to 30. **Later** is one list ordered by when chats come back, soonest first; a chat with a return time shows it beside an alarm, and one saved without a time keeps its usual timestamp. Press H to give a chat a return time. Chats in Later stay out of the attention count and nudges until you move them back. Status shows once per view, always in words: group headers in the Inbox, and the status written on each row in Favorites, Later, search results and ⌘K. Each tab shows how many chats it lists. The active tab stays selected between sidebar openings.
 
-Use Up and Down as soon as the sidebar opens, including on hover. The next chat to act on is selected when the sidebar opens, so Return opens it: a new input request first, then an unread reply. The bar under the list shows the keys that list is for: Later, Archive and Open in the Inbox, Unfavorite in Favorites, Restore in Archive. After you archive a chat or move it to Later, the same bar offers Z to undo it. Use ⌘U to mark read or unread. Escape exits search or closes the sidebar. Choose **Show Archive** from the Relay menu bar icon, or **Go to Archive** in ⌘K, to browse archived chats. Press R there to restore the selected chat. An archived chat comes back by itself, unread, when its agent finishes a new turn, starts one or asks for input, so long-lived chats such as Cursor projects never hide new work. A chat you archive while its agent is still working comes back when that run ends. Add a chat URL from the same menu bar icon.
+Use Up and Down as soon as the sidebar opens, including on hover. The next chat to act on is selected when the sidebar opens, so Return opens it: a new input request first, then an unread reply. The bar under the list shows the keys that list is for: Later, Archive and Open in the Inbox, Unfavorite in Favorites, Restore in Archive. After you archive a chat or move it to Later, the same bar offers Z to undo it. Use ⌘U to mark read or unread. Escape exits search or closes the sidebar. Choose **Show Archive** from the Side Eye menu bar icon, or **Go to Archive** in ⌘K, to browse archived chats. Press R there to restore the selected chat. An archived chat comes back by itself, unread, when its agent finishes a new turn, starts one or asks for input, so long-lived chats such as Cursor projects never hide new work. A chat you archive while its agent is still working comes back when that run ends. Add a chat URL from the same menu bar icon.
 
 A newly completed turn or input request produces a quiet edge nudge. The edge pill shows the number of chats that still need attention. Pending input requests count until they’re resolved or archived, even after you read them.
 
 Row numbers follow the displayed order. Review rows show the age of their last completion. Other rows show the age of their latest reported activity. Hover on a row to see its status, the full local date and time and its summary when available.
 
-**Needs you** stays visible while a decision or answer is pending. **Review** holds work the agent has handed back; unread ones are new. **Working** marks an active turn reported by the source. Grok Bot keeps no running flag on disk, so Relay reads the end of each transcript. A Grok chat counts as working while a request waits for its first answer (up to 10 minutes for yours, 15 for one from another agent), for 5 minutes after a short first reply or a progress note such as “The search is running”, and for 20 seconds after any other message, because agents usually send several in a row. **Idle** means the source has reported no new update or request, and **Inactive** marks idle chats with eight hours without reported activity. **Read** means you opened an update in Relay, marked it read, or its source marked it read. A read reply stays in Review, dimmed, until you archive it; Grok Bot and Cursor report it as read rather than idle.
+**Needs you** stays visible while a decision or answer is pending. **Review** holds work the agent has handed back; unread ones are new. **Working** marks an active turn reported by the source. Grok Bot keeps no running flag on disk, so Side Eye reads the end of each transcript. A Grok chat counts as working while a request waits for its first answer (up to 10 minutes for yours, 15 for one from another agent), for 5 minutes after a short first reply or a progress note such as “The search is running”, and for 20 seconds after any other message, because agents usually send several in a row. **Idle** means the source has reported no new update or request, and **Inactive** marks idle chats with eight hours without reported activity. **Read** means you opened an update in Side Eye, marked it read, or its source marked it read. A read reply stays in Review, dimmed, until you archive it; Grok Bot and Cursor report it as read rather than idle.
 
-**Summarize recent chat text** uses a local model to write one sentence about the latest request, result, and any supported next action. Relay reads bounded excerpts from the apps’ local caches and keeps the summary in memory. The model runs only when needed and shuts down when idle. Rows rely on available source metadata when a recent transcript is absent.
+**Summarize recent chat text** uses a local model to write one sentence about the latest request, result, and any supported next action. Side Eye reads bounded excerpts from the apps’ local caches and keeps the summary in memory. The model runs only when needed and shuts down when idle. Rows rely on available source metadata when a recent transcript is absent.
 
-Completion and input nudges show the same sentence. If it finishes after the nudge appears, Relay adds it to the visible card.
+Completion and input nudges show the same sentence. If it finishes after the nudge appears, Side Eye adds it to the visible card.
 
 ## Sources
 
@@ -93,9 +93,9 @@ Completion and input nudges show the same sentence. If it finishes after the nud
 | Claude Code | Live Desktop and terminal sessions, plus available CLI background jobs. Working, waiting, and completion come from the session registry and CLI. | Exact Desktop link or terminal TTY. Terminal switching can require macOS Automation access. Ghostty needs 1.4 or later for TTY lookup. |
 | Cursor | Local agent chats and cloud agents active in the last 48 hours. Status comes from available generation, approval, and unread fields. | Exact local or cloud agent link |
 | Grok Bot | Agent chats active in the last 48 hours. The local roster supplies unread replies and requests for input. | Exact agent link. The roster identifies the agent even when an unread reply is in one of its subthreads. |
-| Instinct | Enter the one-to-one recipient under **Sources → Set Instinct recipient**. Grant Relay Full Disk Access in System Settings to detect unread replies in Messages. | Native Messages recipient link |
+| Instinct | Enter the one-to-one recipient under **Sources → Set Instinct recipient**. Grant Side Eye Full Disk Access in System Settings to detect unread replies in Messages. | Native Messages recipient link |
 
-Relay scans local metadata about every four seconds and keeps archived chats and source settings in local preferences. The Messages query reads timestamps and delivery flags for the configured conversation. Changes to apps’ local formats can affect discovery or state reporting.
+Side Eye scans local metadata about every four seconds and keeps archived chats and source settings in local preferences. The Messages query reads timestamps and delivery flags for the configured conversation. Changes to apps’ local formats can affect discovery or state reporting.
 
 To show only your main Grok Bot agents, open **Settings → Apps**, choose **Main only** next to **Agents shown** under Grok Bot, and check as many agents as you like. An agent you create later is shown by itself unless you turn off **Show new agents automatically**. Each app in the list says how many chats the last scan found, or why it found none. The list holds every agent in Grok Bot, including archived ones and ones with no recent chat. The sidebar shows a **Main** badge on your marked agents.
 
@@ -103,20 +103,20 @@ Scheduled Codex automation runs are hidden by default. Turn on **Include schedul
 
 ## Build and check
 
-`Scripts/package.sh` builds Relay.app for this Mac. `Scripts/release.sh` builds the download: a universal app, zipped, with its checksum in `dist/`. Pushing a tag such as `v0.16.0` that matches the `VERSION` file runs the release workflow, which publishes the zip as a GitHub release and points the Homebrew cask at it. With a Developer ID in the repository secrets listed in [the workflow](.github/workflows/release.yml), the release is signed and notarized.
+`Scripts/package.sh` builds Side Eye.app for this Mac. `Scripts/release.sh` builds the download: a universal app, zipped, with its checksum in `dist/`. Pushing a tag such as `v0.16.0` that matches the `VERSION` file runs the release workflow, which publishes the zip as a GitHub release and points the Homebrew cask at it. With a Developer ID in the repository secrets listed in [the workflow](.github/workflows/release.yml), the release is signed and notarized.
 
 To check a build, run:
 
 ```sh
-./Scripts/package.sh /path/to/Relay.app
-/path/to/Relay.app/Contents/MacOS/Relay --self-test
-/path/to/Relay.app/Contents/MacOS/Relay --ui-check
-/path/to/Relay.app/Contents/MacOS/Relay --diagnostics
+./Scripts/package.sh "/path/to/Side Eye.app"
+"/path/to/Side Eye.app/Contents/MacOS/SideEye" --self-test
+"/path/to/Side Eye.app/Contents/MacOS/SideEye" --ui-check
+"/path/to/Side Eye.app/Contents/MacOS/SideEye" --diagnostics
 ```
 
 The diagnostics report counts, route availability, and the number of summaries generated locally. Run the UI check with the main app closed so it can register the same shortcuts. Add `--pointer-check` to test the real global shortcut and pointer hover, which briefly moves the pointer.
 
-Summaries are optional and off in the release download, which does not include a model. For a build with them, install llama.cpp (`brew install llama.cpp`) and set `RELAY_SUMMARY_MODEL` to the verified GGUF file in [the model notes](ModelLicenses/RelaySummary.md) when running the packaging script. Relay starts `llama-server` on demand and talks to it over a private Unix socket. Without a model, Settings says summaries are unavailable.
+Summaries are optional and off in the release download, which does not include a model. For a build with them, install llama.cpp (`brew install llama.cpp`) and set `SIDE_EYE_SUMMARY_MODEL` to the verified GGUF file in [the model notes](ModelLicenses/SideEyeSummary.md) when running the packaging script. Side Eye starts `llama-server` on demand and talks to it over a private Unix socket. Without a model, Settings says summaries are unavailable.
 
 [Linear’s design refresh](https://linear.app/now/behind-the-latest-design-refresh), [Mobbin’s navigation references](https://mobbin.com/blog/how-to-use-mobbin-mcp), and the [Wispr Flow edge bar](https://docs.wisprflow.ai/articles/1790396454-move-and-dock-the-flow-bar-on-desktop) informed the overlay. [Codex deep links](https://learn.chatgpt.com/docs/reference/commands#deep-links) and the [Claude Code agent view](https://code.claude.com/docs/en/agent-view#read-session-state-from-a-script) document the underlying entry points.
 

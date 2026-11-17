@@ -32,7 +32,7 @@ final class PreferencesModel: ObservableObject {
     }
     @Published private(set) var launchAtLogin = false
     @Published private(set) var sourceEnabled: [Source: Bool]
-    /// Whether each app has left any data on this Mac for Relay to read.
+    /// Whether each app has left any data on this Mac for Side Eye to read.
     @Published private(set) var sourcePresent: [Source: Bool] = [:]
     @Published private(set) var instinctConfigured = false
     @Published private(set) var hasMultipleDisplays = false
@@ -72,7 +72,7 @@ final class PreferencesModel: ObservableObject {
             if enabled {
                 try service.register()
                 if service.status == .requiresApproval {
-                    loginItemNotice = "Approve Relay in Login Items."
+                    loginItemNotice = "Approve Side Eye in Login Items."
                     SMAppService.openSystemSettingsLoginItems()
                 }
             } else {

@@ -1,19 +1,19 @@
 #!/bin/bash
 set -euo pipefail
 
-# Builds Relay.app. Environment:
-#   RELAY_UNIVERSAL=1        build for Apple silicon and Intel (default: this Mac's architecture)
-#   RELAY_SIGN_IDENTITY      a Developer ID to sign with (default: ad-hoc, which other Macs will block)
-#   RELAY_BUNDLE_ID          the app identifier (default: io.github.jan-ebb.relay)
-#   RELAY_SUMMARY_MODEL      path to the summary model to bundle (default: none)
+# Builds Side Eye.app. Environment:
+#   SIDE_EYE_UNIVERSAL=1        build for Apple silicon and Intel (default: this Mac's architecture)
+#   SIDE_EYE_SIGN_IDENTITY      a Developer ID to sign with (default: ad-hoc, which other Macs will block)
+#   SIDE_EYE_BUNDLE_ID          the app identifier (default: io.github.jan-ebb.side-eye)
+#   SIDE_EYE_SUMMARY_MODEL      path to the summary model to bundle (default: none)
 project="$(cd "$(dirname "$0")/.." && pwd)"
-destination="${1:-$project/Relay.app}"
+destination="${1:-$project/Side Eye.app}"
 version="$(tr -d '[:space:]' < "$project/VERSION")"
 build="$(git -C "$project" rev-list --count HEAD 2>/dev/null || echo 1)"
-bundle_id="${RELAY_BUNDLE_ID:-io.github.jan-ebb.relay}"
-identity="${RELAY_SIGN_IDENTITY:--}"
+bundle_id="${SIDE_EYE_BUNDLE_ID:-io.github.jan-ebb.side-eye}"
+identity="${SIDE_EYE_SIGN_IDENTITY:--}"
 arch_flags=()
-if [[ "${RELAY_UNIVERSAL:-0}" == 1 ]]; then arch_flags=(--arch arm64 --arch x86_64); fi
+if [[ "${SIDE_EYE_UNIVERSAL:-0}" == 1 ]]; then arch_flags=(--arch arm64 --arch x86_64); fi
 if [[ "$destination" != /* ]]; then destination="$PWD/$destination"; fi
 if [[ "$destination" != *.app ]]; then
   echo "Destination must end in .app" >&2
@@ -21,31 +21,31 @@ if [[ "$destination" != *.app ]]; then
 fi
 
 mkdir -p "$(dirname "$destination")"
-stage="$(mktemp -d "$(dirname "$destination")/.relay-build.XXXXXX")"
+stage="$(mktemp -d "$(dirname "$destination")/.side-eye-build.XXXXXX")"
 trap 'rm -rf "$stage"' EXIT
-app="$stage/Relay.app"
-iconset="$stage/Relay.iconset"
+app="$stage/Side Eye.app"
+iconset="$stage/SideEye.iconset"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$iconset"
 
 swift build --package-path "$project" --configuration release ${arch_flags[@]+"${arch_flags[@]}"}
-binary="$(swift build --package-path "$project" --configuration release ${arch_flags[@]+"${arch_flags[@]}"} --show-bin-path)/Relay"
-/usr/bin/install -m 755 "$binary" "$app/Contents/MacOS/Relay"
-/usr/bin/xcrun swiftc "$project/Scripts/icon.swift" -o "$stage/relay-icon"
+binary="$(swift build --package-path "$project" --configuration release ${arch_flags[@]+"${arch_flags[@]}"} --show-bin-path)/SideEye"
+/usr/bin/install -m 755 "$binary" "$app/Contents/MacOS/SideEye"
+/usr/bin/xcrun swiftc "$project/Scripts/icon.swift" -o "$stage/side-eye-icon"
 for size in 16 32 128 256 512; do
-  "$stage/relay-icon" "$size" "$iconset/icon_${size}x${size}.png"
-  "$stage/relay-icon" "$((size * 2))" "$iconset/icon_${size}x${size}@2x.png"
+  "$stage/side-eye-icon" "$size" "$iconset/icon_${size}x${size}.png"
+  "$stage/side-eye-icon" "$((size * 2))" "$iconset/icon_${size}x${size}@2x.png"
 done
-/usr/bin/iconutil -c icns "$iconset" -o "$app/Contents/Resources/Relay.icns"
+/usr/bin/iconutil -c icns "$iconset" -o "$app/Contents/Resources/SideEye.icns"
 
-if [[ -n "${RELAY_SUMMARY_MODEL:-}" ]]; then
+if [[ -n "${SIDE_EYE_SUMMARY_MODEL:-}" ]]; then
   models="$app/Contents/Resources/Models"
   mkdir -p "$models"
-  printf '%s  %s\n' '8b049f98461020b7e15797e13413fc63b9b500ffa883c74618b618ecbc2bfccf' "$RELAY_SUMMARY_MODEL" |
+  printf '%s  %s\n' '8b049f98461020b7e15797e13413fc63b9b500ffa883c74618b618ecbc2bfccf' "$SIDE_EYE_SUMMARY_MODEL" |
     /usr/bin/shasum -a 256 -c
-  /bin/cp -c "$RELAY_SUMMARY_MODEL" "$models/RelaySummary.gguf" ||
-    /usr/bin/install -m 644 "$RELAY_SUMMARY_MODEL" "$models/RelaySummary.gguf"
+  /bin/cp -c "$SIDE_EYE_SUMMARY_MODEL" "$models/SideEyeSummary.gguf" ||
+    /usr/bin/install -m 644 "$SIDE_EYE_SUMMARY_MODEL" "$models/SideEyeSummary.gguf"
   /usr/bin/install -m 644 "$project/ModelLicenses/Qwen-LICENSE.txt" "$models/LICENSE.txt"
-  /usr/bin/install -m 644 "$project/ModelLicenses/RelaySummary.md" "$models/RelaySummary.md"
+  /usr/bin/install -m 644 "$project/ModelLicenses/SideEyeSummary.md" "$models/SideEyeSummary.md"
 fi
 
 cat > "$app/Contents/Info.plist" <<PLIST
@@ -54,18 +54,18 @@ cat > "$app/Contents/Info.plist" <<PLIST
 <plist version="1.0">
 <dict>
     <key>CFBundleDevelopmentRegion</key><string>en</string>
-    <key>CFBundleExecutable</key><string>Relay</string>
+    <key>CFBundleExecutable</key><string>SideEye</string>
     <key>CFBundleIdentifier</key><string>$bundle_id</string>
-    <key>CFBundleIconFile</key><string>Relay</string>
-    <key>CFBundleName</key><string>Relay</string>
-    <key>CFBundleDisplayName</key><string>Relay</string>
+    <key>CFBundleIconFile</key><string>SideEye</string>
+    <key>CFBundleName</key><string>Side Eye</string>
+    <key>CFBundleDisplayName</key><string>Side Eye</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>$version</string>
     <key>CFBundleVersion</key><string>$build</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>LSUIElement</key><true/>
     <key>NSAppleEventsUsageDescription</key>
-    <string>Relay uses Automation to switch to the exact terminal tab for a Claude Code session when you open it.</string>
+    <string>Side Eye uses Automation to switch to the exact terminal tab for a Claude Code session when you open it.</string>
     <key>NSHighResolutionCapable</key><true/>
 </dict>
 </plist>

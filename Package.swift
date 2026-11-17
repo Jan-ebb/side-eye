@@ -2,8 +2,8 @@
 import PackageDescription
 
 let package = Package(
-    name: "Relay",
+    name: "SideEye",
     platforms: [.macOS(.v14)],
-    products: [.executable(name: "Relay", targets: ["Relay"])],
-    targets: [.executableTarget(name: "Relay")]
+    products: [.executable(name: "SideEye", targets: ["SideEye"])],
+    targets: [.executableTarget(name: "SideEye")]
 )

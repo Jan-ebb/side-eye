@@ -3,7 +3,7 @@ import AppKit
 MainActor.assumeIsolated {
     let application = NSApplication.shared
     application.setActivationPolicy(.accessory)
-    // Before anything reads a setting: bring them over from the identifier Relay used to have.
+    // Before anything reads a setting: bring them over from the identifier Side Eye used to have.
     LegacySettings.migrateIfNeeded()
     let delegate = AppDelegate()
     application.delegate = delegate

@@ -15,4 +15,4 @@ jobs:
       - name: Build
         run: swift --version && swift build
       - name: Logic checks
-        run: .build/debug/Relay --self-test
+        run: .build/debug/SideEye --self-test

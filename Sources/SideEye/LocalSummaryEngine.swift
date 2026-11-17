@@ -4,7 +4,7 @@ import NaturalLanguage
 
 /// A warm, app-owned model worker. Conversation data travels over a private Unix socket.
 actor LocalSummaryEngine {
-    static let modelFileName = "RelaySummary"
+    static let modelFileName = "SideEyeSummary"
     private static let maximumSummaryLength = 135
     private static let idleSeconds: Double = 45
     /// llama.cpp's server, where Homebrew puts it on Apple silicon or on Intel.
@@ -310,7 +310,7 @@ actor LocalSummaryEngine {
     }
 
     private final class Worker: @unchecked Sendable {
-        // The supervisor holds a read end of Relay's liveness pipe. EOF on app exit or
+        // The supervisor holds a read end of Side Eye's liveness pipe. EOF on app exit or
         // force-kill signals the model server, so a crashed app cannot leave a worker.
         private static let supervisor = """
         directory=$1
@@ -345,12 +345,12 @@ actor LocalSummaryEngine {
 
         init(modelURL: URL, serverURL: URL) throws {
             let directory = URL(fileURLWithPath: "/tmp", isDirectory: true)
-                .appendingPathComponent("relay-summary-" + UUID().uuidString, isDirectory: true)
+                .appendingPathComponent("side-eye-summary-" + UUID().uuidString, isDirectory: true)
             socket = directory.appendingPathComponent("model.sock")
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false,
                                                     attributes: [.posixPermissions: 0o700])
             process.executableURL = URL(fileURLWithPath: "/bin/sh")
-            process.arguments = ["-c", Self.supervisor, "relay-summary", directory.path, socket.path,
+            process.arguments = ["-c", Self.supervisor, "side-eye-summary", directory.path, socket.path,
                                  serverURL.path, "-m", modelURL.path, "--host", socket.path, "--ctx-size", "3072",
                                  "--parallel", "1", "--reasoning", "off", "--no-webui", "--no-slots",
                                  "--no-cache-prompt", "--timeout", "10", "--log-disable"]

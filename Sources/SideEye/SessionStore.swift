@@ -365,7 +365,7 @@ final class SessionStore: ObservableObject {
 
     private let defaults: UserDefaults?
     private var grokRoster: [GrokAgent] = []
-    /// Every Grok agent Relay has seen in the roster, so a later one can be told apart as new.
+    /// Every Grok agent Side Eye has seen in the roster, so a later one can be told apart as new.
     private var knownGrokIDs: Set<String>?
     /// When the last scan arrived. Not published: it changes every few seconds.
     private(set) var lastScan: Date?
@@ -563,7 +563,7 @@ final class SessionStore: ObservableObject {
         rebuild()
     }
 
-    /// The agents in Grok Bot's own roster, including ones with no recent chat. An agent Relay has not
+    /// The agents in Grok Bot's own roster, including ones with no recent chat. An agent Side Eye has not
     /// seen before joins the main agents by itself while only main agents are shown, so a bot you
     /// just created does not start out hidden.
     func setGrokRoster(_ agents: [GrokAgent]) {
@@ -604,7 +604,7 @@ final class SessionStore: ObservableObject {
         return latest.isEmpty && hiddenCount == 0 ? .noChats : .caughtUp
     }
 
-    /// How many chats the last scan found for an app, shown in Relay or not.
+    /// How many chats the last scan found for an app, shown in Side Eye or not.
     func foundCount(for source: Source, mainOnly: Bool = false) -> Int {
         latest.values.lazy.filter { session in
             session.source == source && !session.id.hasPrefix("link:")
@@ -834,7 +834,7 @@ final class SessionStore: ObservableObject {
     func refreshPreferences() { rebuild() }
 
     private func rebuild(now: Date = Date()) {
-        // Settings offers every agent in Grok Bot's roster plus any Grok chat Relay has seen, archived
+        // Settings offers every agent in Grok Bot's roster plus any Grok chat Side Eye has seen, archived
         // or not, so an agent can be marked as main before it is next active.
         var grokByID = Dictionary(grokRoster.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         for session in latest.values where session.source == .grok {

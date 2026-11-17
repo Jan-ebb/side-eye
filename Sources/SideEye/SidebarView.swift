@@ -346,7 +346,7 @@ private extension SessionRow {
             return needsReview ? "Queued for review." : "The latest update is marked as read."
         case .idle where session.source != .instinct:
             if isStale { return "No activity reported in the last eight hours." }
-            return showsUnreadDot ? "Marked as unread." : "Relay sees no new update or input request."
+            return showsUnreadDot ? "Marked as unread." : "Side Eye sees no new update or input request."
         default:
             return nil
         }
@@ -572,7 +572,7 @@ struct SidebarView: View {
         .onChange(of: store.filter) { hoveredRowID = nil }
         .foregroundStyle(colors.primary)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Relay chats")
+        .accessibilityLabel("Side Eye chats")
     }
 
     private var borderColor: Color {
@@ -979,7 +979,7 @@ struct SidebarView: View {
         case .all:
             switch store.emptiness {
             case .noApps:
-                return "Relay watches Codex, Claude Code, Cursor and Grok Bot. Start a chat in one of them and it appears here."
+                return "Side Eye watches Codex, Claude Code, Cursor and Grok Bot. Start a chat in one of them and it appears here."
             case .noChats:
                 return "Start a chat in one of your agent apps and it appears here within a few seconds."
             case .caughtUp:
@@ -993,7 +993,7 @@ struct SidebarView: View {
         case .later: return "Press L on a chat to save it for later."
         case .archive:
             return store.missingArchiveCount > 0
-                ? "Older archived chats appear when Relay finds them again."
+                ? "Older archived chats appear when Side Eye finds them again."
                 : "Chats you archive appear here."
         }
     }
@@ -1498,7 +1498,7 @@ struct RailView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Show Relay sessions")
+        .accessibilityLabel("Show Side Eye sessions")
         .accessibilityValue(activity(input: input, review: total - input))
     }
 }
@@ -1531,7 +1531,7 @@ struct NudgeView: View {
         } else {
             content
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel(message ?? "Relay")
+                .accessibilityLabel(message ?? "Side Eye")
         }
     }
 
@@ -1551,7 +1551,7 @@ struct NudgeView: View {
             }
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
-                    Text(message ?? session?.title ?? "Relay")
+                    Text(message ?? session?.title ?? "Side Eye")
                         .font(.system(size: 14, weight: .semibold))
                         .lineLimit(session == nil ? 2 : 1)
                     Spacer(minLength: 0)

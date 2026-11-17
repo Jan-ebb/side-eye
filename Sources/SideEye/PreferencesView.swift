@@ -70,11 +70,11 @@ struct PreferencesView: View {
 
     private var general: some View {
         Group {
-            SettingsGroup(title: "Relay") {
+            SettingsGroup(title: "Side Eye") {
                 settingToggle("Open at login", detail: model.loginItemNotice,
                               value: Binding(get: { model.launchAtLogin }, set: model.setLaunchAtLogin))
                 SettingsDivider()
-                settingToggle("Show the edge pill", detail: "Hover it at the edge of your screen to open Relay.",
+                settingToggle("Show the edge pill", detail: "Hover it at the edge of your screen to open Side Eye.",
                               value: $model.edgeVisible)
                 SettingsDivider()
                 settingToggle("Nudge me about chats", detail: "A short note appears when a chat finishes or needs you.",
@@ -82,7 +82,7 @@ struct PreferencesView: View {
                 if model.hasMultipleDisplays {
                     SettingsDivider()
                     SettingsRow {
-                        SettingsLabel(title: "Display", detail: "Relay sits on one display at a time.")
+                        SettingsLabel(title: "Display", detail: "Side Eye sits on one display at a time.")
                     } control: {
                         Button("Move to This Display", action: model.moveOverlay)
                             .controlSize(.small)
@@ -93,7 +93,7 @@ struct PreferencesView: View {
                 settingToggle("Summarize recent chat text",
                               detail: LocalSummaryEngine.isInstalled
                                   ? "See what changed and what’s next. Chat text stays on this Mac."
-                                  : "Needs a local model and llama.cpp, which this copy of Relay doesn’t have. The README says how to add them.",
+                                  : "Needs a local model and llama.cpp, which this copy of Side Eye doesn’t have. The README says how to add them.",
                               enabled: LocalSummaryEngine.isInstalled, value: $model.localPreviewsEnabled)
             }
             if store.hiddenCount > 0 {
@@ -122,7 +122,7 @@ struct PreferencesView: View {
                             .foregroundStyle(.secondary)
                         statusDefinition("Read", "A reply you opened or marked read. It stays under Review, dimmed, until you archive it.")
                         statusDefinition("Inactive", "An idle chat with no reported activity for eight hours.")
-                        statusDefinition("Status unavailable", "Relay has no status signal for this chat.")
+                        statusDefinition("Status unavailable", "Side Eye has no status signal for this chat.")
                     }
                 }
             }
@@ -135,7 +135,7 @@ struct PreferencesView: View {
 
     private var sources: some View {
         Group {
-            SettingsGroup(title: "Relay watches") {
+            SettingsGroup(title: "Side Eye watches") {
                 rescanButton
             } content: {
                 sourceRow(.codex)
@@ -159,7 +159,7 @@ struct PreferencesView: View {
             SettingsGroup(title: "More apps") {
                 SettingsDisclosure(title: "Instinct via Messages", isExpanded: $showsOptionalSources) {
                     VStack(alignment: .leading, spacing: 0) {
-                        Text("An agent you reach by text message. Relay watches one Messages conversation for its replies.")
+                        Text("An agent you reach by text message. Side Eye watches one Messages conversation for its replies.")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -177,7 +177,7 @@ struct PreferencesView: View {
                         if model.instinctConfigured {
                             Divider()
                             SettingsRow(flush: true) {
-                                SettingsLabel(title: "Reply tracking", detail: "Allow Relay to check for Messages replies.")
+                                SettingsLabel(title: "Reply tracking", detail: "Allow Side Eye to check for Messages replies.")
                             } control: {
                                 Button("Open Privacy Settings", action: model.openFullDiskAccess)
                                     .controlSize(.small)
@@ -213,7 +213,7 @@ struct PreferencesView: View {
         .buttonStyle(.plain)
         .font(.system(size: 11, weight: .medium))
         .foregroundStyle(.secondary)
-        .help("Look for chats again now. Relay also scans by itself every few seconds.")
+        .help("Look for chats again now. Side Eye also scans by itself every few seconds.")
     }
 
     /// Options of one app sit under its row, starting where its name starts.
@@ -271,7 +271,7 @@ struct PreferencesView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                Text(agents.isEmpty ? "No Grok Bot agents found yet." : "Relay shows only the agents you check.")
+                Text(agents.isEmpty ? "No Grok Bot agents found yet." : "Side Eye shows only the agents you check.")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                 if !agents.isEmpty { agentGrid(agents) }
@@ -348,12 +348,12 @@ struct PreferencesView: View {
 
     // MARK: Shortcuts
 
-    /// Only the shortcuts Relay cannot show elsewhere. Everything that works inside Relay is listed,
+    /// Only the shortcuts Side Eye cannot show elsewhere. Everything that works inside Side Eye is listed,
     /// with its key, in the command palette.
     private var shortcuts: some View {
         Group {
             SettingsGroup(title: "From any app") {
-                shortcutRow("Show or hide Relay", keys: ["⌃⌥Space"], shortcut: .overlay)
+                shortcutRow("Show or hide Side Eye", keys: ["⌃⌥Space"], shortcut: .overlay)
                 SettingsDivider()
                 shortcutRow("Open the command palette", keys: ["⌃⌥K"], shortcut: .palette)
                 SettingsDivider()
@@ -367,7 +367,7 @@ struct PreferencesView: View {
                 SettingsDivider()
                 shortcutRow("Show or hide previews", keys: ["⌃⌥D"], shortcut: .details)
             }
-            SettingsGroup(title: "In Relay") {
+            SettingsGroup(title: "In Side Eye") {
                 shortcutRow("Command palette",
                             detail: "Lists every command with its key. Single letters such as E, L and F act on the selected chat.",
                             keys: ["⌘K"])
@@ -410,7 +410,7 @@ struct PreferencesView: View {
         let unavailable = shortcut.map { model.unavailableShortcuts.contains($0) } == true
         return SettingsRow(compact: true, flush: flush) {
             SettingsLabel(title: title, detail: unavailable
-                          ? "Another app already uses this shortcut. Free it there, then reopen Relay." : detail)
+                          ? "Another app already uses this shortcut. Free it there, then reopen Side Eye." : detail)
         } control: {
             HStack(spacing: 4) {
                 ForEach(Array(keys.enumerated()), id: \.offset) { _, key in

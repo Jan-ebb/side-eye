@@ -39,10 +39,10 @@ final class SidebarMorph {
     // A single small rebound at the end of the opening. Only the free edge stretches.
     private static let openingPeak: Double = 0.80
     private static let openingOvershoot: CGFloat = 4
-    private static let geometryAnimationKey = "relayMorphGeometry"
-    private static let appearanceAnimationKey = "relayMorphAppearance"
-    private static let countPositionKey = "relayMorphCountPosition"
-    private static let countOpacityKey = "relayMorphCountOpacity"
+    private static let geometryAnimationKey = "sideEyeMorphGeometry"
+    private static let appearanceAnimationKey = "sideEyeMorphAppearance"
+    private static let countPositionKey = "sideEyeMorphCountPosition"
+    private static let countOpacityKey = "sideEyeMorphCountOpacity"
     private static let shadowPadding: CGFloat = 28
 
     let window: NSPanel
@@ -58,7 +58,7 @@ final class SidebarMorph {
     init() {
         let panel = SidebarMorphPanel(contentRect: CGRect(x: 0, y: 0, width: 1, height: 1),
                                      styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        panel.title = "Relay transition"
+        panel.title = "Side Eye transition"
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.level = .floating

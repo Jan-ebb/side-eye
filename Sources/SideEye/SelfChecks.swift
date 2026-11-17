@@ -203,7 +203,7 @@ enum SelfChecks {
 
     private static func checkCodexAutomationVisibility(now: Date) {
         let files = FileManager.default
-        let home = files.temporaryDirectory.appendingPathComponent("relay-codex-fixture-" + UUID().uuidString, isDirectory: true)
+        let home = files.temporaryDirectory.appendingPathComponent("side-eye-codex-fixture-" + UUID().uuidString, isDirectory: true)
         let desktop = home.appendingPathComponent("sqlite", isDirectory: true)
         try! files.createDirectory(at: desktop, withIntermediateDirectories: true)
         defer { try? files.removeItem(at: home) }
@@ -544,7 +544,7 @@ enum SelfChecks {
     }
 
     private static func checkPalette(now: Date) {
-        let suite = "com.relay.sessions.palette-self-test.\(UUID().uuidString)"
+        let suite = "side-eye.palette-self-test.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suite) else { preconditionFailure("Missing test preferences") }
         defer { defaults.removePersistentDomain(forName: suite) }
         let store = SessionStore(defaults: defaults)
@@ -642,7 +642,7 @@ enum SelfChecks {
     }
 
     private static func checkLater(now: Date) {
-        let suite = "com.relay.sessions.later-self-test.\(UUID().uuidString)"
+        let suite = "side-eye.later-self-test.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suite) else { preconditionFailure("Missing test preferences") }
         defer { defaults.removePersistentDomain(forName: suite) }
 
@@ -699,7 +699,7 @@ enum SelfChecks {
     }
 
     private static func checkLegacyMigration() {
-        let suite = "relay.migration-self-test.\(UUID().uuidString)"
+        let suite = "side-eye.migration-self-test.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suite) else { preconditionFailure("Missing test preferences") }
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.set("kept", forKey: "existing")
@@ -811,7 +811,7 @@ enum SelfChecks {
     }
 
     private static func checkArchive(now: Date) {
-        let suite = "com.relay.sessions.archive-self-test.\(UUID().uuidString)"
+        let suite = "side-eye.archive-self-test.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suite) else { preconditionFailure("Missing test preferences") }
         defer { defaults.removePersistentDomain(forName: suite) }
 
@@ -882,7 +882,7 @@ enum SelfChecks {
         }
         store.ingest(fixtures)
         Task {
-            let previewDirectory = ProcessInfo.processInfo.environment["RELAY_PREVIEW_DIRECTORY"].map {
+            let previewDirectory = ProcessInfo.processInfo.environment["SIDE_EYE_PREVIEW_DIRECTORY"].map {
                 URL(fileURLWithPath: $0)
             }
             precondition(overlay.isEdgeVisible && !overlay.isShowing)
@@ -920,7 +920,7 @@ enum SelfChecks {
             }
             if CommandLine.arguments.contains("--pointer-check"),
                !missing.contains(.overlay), let toggled = await overlay.checkGlobalToggle() {
-                precondition(toggled, "The global shortcut must focus the sidebar without activating Relay")
+                precondition(toggled, "The global shortcut must focus the sidebar without activating Side Eye")
                 print("Real global toggle passed.")
                 if !missing.contains(.one) {
                     let filtered = await overlay.checkGlobalFilteredNumber()
@@ -929,7 +929,7 @@ enum SelfChecks {
                 }
                 if !missing.contains(.archive) {
                     let archived = await overlay.checkGlobalArchive()
-                    precondition(archived, "The global archive shortcut must remove the selected Relay row")
+                    precondition(archived, "The global archive shortcut must remove the selected Side Eye row")
                     precondition(store.undoHide(), "The archived fixture should be restorable")
                     print("Real global archive and undo passed.")
                 }
@@ -991,7 +991,7 @@ enum SelfChecks {
         let desktop = DesktopProvider()
         let summaries = SessionSummaryProvider()
         let includesAutomation = UserDefaults.standard.bool(forKey: SessionStore.automationRunsPreferenceKey)
-        let queue = DispatchQueue(label: "Relay.diagnostics", qos: .utility)
+        let queue = DispatchQueue(label: "SideEye.diagnostics", qos: .utility)
         queue.async {
             _ = claude.scan()
             queue.asyncAfter(deadline: .now() + 1.5) {

@@ -74,7 +74,7 @@ final class OverlayController {
 
     private static let railOffsetsKey = "railVerticalPositionByDisplay"
     private static let lastRailDisplayKey = "railLastDraggedDisplay"
-    private static let revealAnimationKey = "relaySidebarReveal"
+    private static let revealAnimationKey = "sideEyeSidebarReveal"
     private let store: SessionStore
     private let placementDefaults: UserDefaults?
     private let railMotion = RailMotion()
@@ -83,9 +83,9 @@ final class OverlayController {
     private var railOffsets: [String: Double]
     private var selectedDisplayID: String?
     private var railPress: RailPress?
-    private let rail = OverlayPanel(name: "Relay edge", size: OverlayMetrics.railSize)
-    private let sidebar = OverlayPanel(name: "Relay chats", size: .init(width: OverlayMetrics.width, height: 200))
-    private let nudge = OverlayPanel(name: "Relay nudge", size: OverlayMetrics.nudgeSize)
+    private let rail = OverlayPanel(name: "Side Eye edge", size: OverlayMetrics.railSize)
+    private let sidebar = OverlayPanel(name: "Side Eye chats", size: .init(width: OverlayMetrics.width, height: 200))
+    private let nudge = OverlayPanel(name: "Side Eye nudge", size: OverlayMetrics.nudgeSize)
     private var screen: NSScreen?
     private var hoverTask: Task<Void, Never>?
     private var collapseTask: Task<Void, Never>?
@@ -542,7 +542,7 @@ final class OverlayController {
     }
 
     func checkLayoutAndKeyInput() {
-        precondition(sidebar.isKeyWindow, "Keyboard sidebar should become key without activating Relay")
+        precondition(sidebar.isKeyWindow, "Keyboard sidebar should become key without activating Side Eye")
         precondition(sidebar.frame.maxX == pillShape(phase: .idle).rect.maxX,
                      "The sidebar and pill must share a right edge")
         if let visibleFrame = screen?.visibleFrame {
@@ -609,7 +609,7 @@ final class OverlayController {
         press("\u{f700}", code: 126)
         press("\u{f700}", code: 126)
         precondition(store.selectedID == "three", "↑ should step up in Favorites")
-        if let previewDirectory = ProcessInfo.processInfo.environment["RELAY_PREVIEW_DIRECTORY"] {
+        if let previewDirectory = ProcessInfo.processInfo.environment["SIDE_EYE_PREVIEW_DIRECTORY"] {
             renderPreview(in: URL(fileURLWithPath: previewDirectory).appendingPathComponent("favorites"))
         }
         for id in starred { if let row = store.rows.first(where: { $0.id == id }) { _ = store.togglePin(row.session) } }
@@ -634,7 +634,7 @@ final class OverlayController {
         precondition(store.palette == nil)
         store.selectedID = "two"
         press("0", code: 29)
-        precondition(store.numberEntry == "", "0 should open the number picker inside Relay")
+        precondition(store.numberEntry == "", "0 should open the number picker inside Side Eye")
         press("2", code: 19)
         press("\r", code: 36)
         precondition(openedID == "one", "Number entry should follow the grouped order")
@@ -652,7 +652,7 @@ final class OverlayController {
         press("1", code: 18)
         press("2", code: 19)
         precondition(store.numberEntry == "12" && openedID == nil)
-        let previewDirectory = ProcessInfo.processInfo.environment["RELAY_PREVIEW_DIRECTORY"].map(URL.init(fileURLWithPath:))
+        let previewDirectory = ProcessInfo.processInfo.environment["SIDE_EYE_PREVIEW_DIRECTORY"].map(URL.init(fileURLWithPath:))
         if let previewDirectory { renderPreview(in: previewDirectory) }
         press("\r", code: 36)
         precondition(openedID == twelfth, "Entering 12 and Return should open the twelfth row")
@@ -710,7 +710,7 @@ final class OverlayController {
         precondition(OverlayMetrics.sidebarHeight(for: store) > compactHeight,
                      "Previews add a line under each row, so they need a taller panel")
         precondition(sidebar.frame.maxX == compactFrame.maxX, "Both layouts must keep the pill's right edge")
-        if let path = ProcessInfo.processInfo.environment["RELAY_PREVIEW_DIRECTORY"] {
+        if let path = ProcessInfo.processInfo.environment["SIDE_EYE_PREVIEW_DIRECTORY"] {
             renderPreview(in: URL(fileURLWithPath: path).appendingPathComponent("briefing"))
         }
 

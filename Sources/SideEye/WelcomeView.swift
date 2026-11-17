@@ -1,11 +1,11 @@
 import SwiftUI
 
-/// What a new person sees on first launch: what Relay found, how to open it, and the little there
+/// What a new person sees on first launch: what Side Eye found, how to open it, and the little there
 /// is to learn. It reuses the Settings rows, so anything shown here looks the same there.
 struct WelcomeView: View {
     @ObservedObject var model: PreferencesModel
     @ObservedObject var store: SessionStore
-    let showRelay: () -> Void
+    let showSideEye: () -> Void
     let done: () -> Void
     @Environment(\.colorScheme) private var scheme
 
@@ -19,13 +19,13 @@ struct WelcomeView: View {
                 VStack(alignment: .leading, spacing: 18) {
                     header
                     VStack(alignment: .leading, spacing: 7) {
-                        SettingsGroup(title: "Apps Relay found") { appRows }
-                        Text("Relay reads these apps’ local files to list their chats. Nothing leaves this Mac.")
+                        SettingsGroup(title: "Apps Side Eye found") { appRows }
+                        Text("Side Eye reads these apps’ local files to list their chats. Nothing leaves this Mac.")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 13)
                     }
-                    SettingsGroup(title: "Open Relay") { openRows }
+                    SettingsGroup(title: "Open Side Eye") { openRows }
                     SettingsGroup(title: "What the list tells you") { statusRows }
                     SettingsGroup(title: "Keys worth knowing") { keyRows }
                 }
@@ -35,7 +35,7 @@ struct WelcomeView: View {
             }
             Divider()
             HStack {
-                Toggle("Open Relay at login", isOn: Binding(get: { model.launchAtLogin }, set: model.setLaunchAtLogin))
+                Toggle("Open Side Eye at login", isOn: Binding(get: { model.launchAtLogin }, set: model.setLaunchAtLogin))
                     .toggleStyle(.checkbox)
                     .font(.system(size: 13))
                 Spacer()
@@ -57,7 +57,7 @@ struct WelcomeView: View {
                 .frame(width: 52, height: 52)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
-                Text("Welcome to Relay")
+                Text("Welcome to Side Eye")
                     .font(.system(size: 22, weight: .semibold))
                     .accessibilityAddTraits(.isHeader)
                 Text("One list for all your agent chats, at the edge of your screen.")
@@ -104,7 +104,7 @@ struct WelcomeView: View {
                           detail: taken ? "Another app already uses ⌃⌥Space, so that shortcut is off."
                                         : "Or press ⌃⌥Space from any app.")
         } control: {
-            Button("Show Relay", action: showRelay)
+            Button("Show Side Eye", action: showSideEye)
                 .controlSize(.small)
         }
     }

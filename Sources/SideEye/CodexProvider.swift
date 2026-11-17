@@ -21,7 +21,7 @@ final class CodexProvider: @unchecked Sendable {
     }
 
     // The desktop has its own app-server connection. Read its indexed local projection
-    // so Relay can discover chats without opening, resuming, or writing to any of them.
+    // so Side Eye can discover chats without opening, resuming, or writing to any of them.
     func scan(includeAutomationRuns: Bool = false) -> [Session] {
         let now = Date()
         guard let state = database("state", current: 5) else {
@@ -451,7 +451,7 @@ private final class CodexRuntimeMonitor {
         requestID = id
         _ = send(Outgoing(
             type: "request", method: "initialize", sourceClientId: "initializing-client",
-            version: 0, requestId: id, params: .init(clientType: "relay-session-monitor")
+            version: 0, requestId: id, params: .init(clientType: "side-eye-session-monitor")
         ))
     }
 
