@@ -87,23 +87,23 @@ A newly completed turn or input request produces a quiet edge nudge. The edge pi
 
 Row numbers follow the displayed order. Review rows show the age of their last completion. Other rows show the age of their latest reported activity. Hover on a row to see its status, the full local date and time and its summary when available.
 
-**Needs you** stays visible while a decision or answer is pending. **Review** holds work the agent has handed back; unread ones are new. **Working** marks an active turn reported by the source. Grok Bot keeps no running flag on disk, so Side Eye reads the end of each transcript. A Grok chat counts as working while a request waits for its first answer (up to 10 minutes for yours, 15 for one from another agent), for 5 minutes after a short first reply or a progress note such as “The search is running”, and for 20 seconds after any other message, because agents usually send several in a row. **Idle** means the source has reported no new update or request, and **Inactive** marks idle chats with eight hours without reported activity. **Read** means you opened an update in Side Eye, marked it read, or its source marked it read. A read reply stays in Review, dimmed, until you archive it; Grok Bot and Cursor report it as read rather than idle.
+**Needs you** stays visible while a decision or answer is pending. **Review** holds work the agent has handed back; unread ones are new. **Working** marks an active turn reported by the app. Grok Bot keeps no running flag on disk, so Side Eye reads the end of each transcript. A Grok chat counts as working while a request waits for its first answer (up to 10 minutes for yours, 15 for one from another agent), for 5 minutes after a short first reply or a progress note such as “The search is running”, and for 20 seconds after any other message, because agents usually send several in a row. **Idle** means the app has reported no new update or request, and **Inactive** marks idle chats with eight hours without reported activity. **Read** means you opened an update in Side Eye, marked it read, or its app marked it read. A read reply stays in Review, dimmed, until you archive it; Grok Bot and Cursor report it as read rather than idle.
 
-**Summarize recent chat text** uses a local model to write one sentence about the latest request, result, and any supported next action. Side Eye reads bounded excerpts from the apps’ local caches and keeps the summary in memory. The model runs only when needed and shuts down when idle. Rows rely on available source metadata when a recent transcript is absent.
+**Summarize recent chat text** uses a local model to write one sentence about the latest request, result, and any supported next action. Side Eye reads bounded excerpts from the apps’ local caches and keeps the summary in memory. The model runs only when needed and shuts down when idle. Rows rely on what the app itself reports when a recent transcript is absent.
 
 Completion and input nudges show the same sentence. If it finishes after the nudge appears, Side Eye adds it to the visible card.
 
-## Sources
+## Apps
 
-| Source | Discovery and signals | Switching |
+| App | Discovery and signals | Switching |
 | --- | --- | --- |
 | Codex desktop | Up to 32 non-archived chats active in the last 24 hours. Completion and read state come from local history. Input requests use the installed app’s live status when available. | Exact thread link |
 | Claude Code | Live Desktop and terminal sessions, plus available CLI background jobs. Working, waiting, and completion come from the session registry and CLI. | Exact Desktop link or terminal TTY. Terminal switching can require macOS Automation access. Ghostty needs 1.4 or later for TTY lookup. |
 | Cursor | Local agent chats and cloud agents active in the last 48 hours. Status comes from available generation, approval, and unread fields. | Exact local or cloud agent link |
 | Grok Bot | Agent chats active in the last 48 hours. The local roster supplies unread replies and requests for input. | Exact agent link. The roster identifies the agent even when an unread reply is in one of its subthreads. |
-| Instinct | Enter the one-to-one recipient under **Sources → Set Instinct recipient**. Grant Side Eye Full Disk Access in System Settings to detect unread replies in Messages. | Native Messages recipient link |
+| Instinct | Set it up under **Settings → Apps → More apps → Instinct via Messages**: press **Connect…** and enter the phone number or email address of your one-to-one Instinct chat. To detect unread replies in Messages, grant Side Eye Full Disk Access with **Open Privacy Settings** in the same place. | Native Messages recipient link |
 
-Side Eye scans local metadata about every four seconds and keeps archived chats and source settings in local preferences. The Messages query reads timestamps and delivery flags for the configured conversation. Changes to apps’ local formats can affect discovery or state reporting.
+Side Eye scans local metadata about every four seconds and keeps archived chats and app settings in local preferences. The Messages query reads timestamps and delivery flags for the configured conversation. Changes to apps’ local formats can affect discovery or state reporting.
 
 To show only your main Grok Bot agents, open **Settings → Apps**, choose **Main only** next to **Agents shown** under Grok Bot, and check as many agents as you like. An agent you create later is shown by itself unless you turn off **Show new agents automatically**. Each app in the list says how many chats the last scan found, or why it found none. The list holds every agent in Grok Bot, including archived ones and ones with no recent chat. The sidebar shows a **Main** badge on your marked agents.
 
