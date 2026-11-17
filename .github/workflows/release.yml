@@ -1,0 +1,70 @@
+name: Release
+
+# Push a tag such as v0.16.0 that matches the VERSION file. The workflow builds a universal app,
+# publishes it as a GitHub release and points the Homebrew cask at it.
+#
+# Signing is optional. With these repository secrets the app is signed with a Developer ID and
+# notarized, so macOS opens it without a warning; without them it is ad-hoc signed.
+#   DEVELOPER_ID_CERT_P12       the Developer ID Application certificate, exported as .p12, base64
+#   DEVELOPER_ID_CERT_PASSWORD  the password of that .p12
+#   DEVELOPER_ID_NAME           "Developer ID Application: Your Name (TEAMID)"
+#   APPLE_ID, APPLE_TEAM_ID, APPLE_APP_PASSWORD   for notarization (an app-specific password)
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-latest
+    env:
+      DEVELOPER_ID_CERT_P12: ${{ secrets.DEVELOPER_ID_CERT_P12 }}
+      DEVELOPER_ID_CERT_PASSWORD: ${{ secrets.DEVELOPER_ID_CERT_PASSWORD }}
+      DEVELOPER_ID_NAME: ${{ secrets.DEVELOPER_ID_NAME }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Use the newest Xcode
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
+      - name: Check the tag matches VERSION
+        run: test "v$(tr -d '[:space:]' < VERSION)" = "$GITHUB_REF_NAME"
+      - name: Logic checks
+        run: swift build && .build/debug/Relay --self-test
+      - name: Set up signing
+        if: env.DEVELOPER_ID_CERT_P12 != ''
+        run: |
+          keychain="$RUNNER_TEMP/relay.keychain-db"
+          security create-keychain -p "" "$keychain"
+          security set-keychain-settings "$keychain"
+          security unlock-keychain -p "" "$keychain"
+          echo "$DEVELOPER_ID_CERT_P12" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$keychain" -P "$DEVELOPER_ID_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" "$keychain"
+          security list-keychains -d user -s "$keychain" login.keychain-db
+          xcrun notarytool store-credentials relay-notary --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD"
+          echo "RELAY_SIGN_IDENTITY=$DEVELOPER_ID_NAME" >> "$GITHUB_ENV"
+          echo "RELAY_NOTARY_PROFILE=relay-notary" >> "$GITHUB_ENV"
+      - name: Build the download
+        run: ./Scripts/release.sh
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/Relay-*.zip dist/Relay-*.zip.sha256 \
+            --title "Relay ${GITHUB_REF_NAME#v}" --generate-notes
+      - name: Point the Homebrew cask at this release
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          sha="$(cat "dist/Relay-$version.zip.sha256")"
+          sed -i '' -e "s/^  version \".*\"/  version \"$version\"/" -e "s/^  sha256 .*/  sha256 \"$sha\"/" Casks/relay.rb
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "Point the cask at Relay $version"
+          git push origin HEAD:main
