@@ -1,8 +1,19 @@
 #!/bin/bash
 set -euo pipefail
 
+# Builds Relay.app. Environment:
+#   RELAY_UNIVERSAL=1        build for Apple silicon and Intel (default: this Mac's architecture)
+#   RELAY_SIGN_IDENTITY      a Developer ID to sign with (default: ad-hoc, which other Macs will block)
+#   RELAY_BUNDLE_ID          the app identifier (default: io.github.jan-ebb.relay)
+#   RELAY_SUMMARY_MODEL      path to the summary model to bundle (default: none)
 project="$(cd "$(dirname "$0")/.." && pwd)"
 destination="${1:-$project/Relay.app}"
+version="$(tr -d '[:space:]' < "$project/VERSION")"
+build="$(git -C "$project" rev-list --count HEAD 2>/dev/null || echo 1)"
+bundle_id="${RELAY_BUNDLE_ID:-io.github.jan-ebb.relay}"
+identity="${RELAY_SIGN_IDENTITY:--}"
+arch_flags=()
+if [[ "${RELAY_UNIVERSAL:-0}" == 1 ]]; then arch_flags=(--arch arm64 --arch x86_64); fi
 if [[ "$destination" != /* ]]; then destination="$PWD/$destination"; fi
 if [[ "$destination" != *.app ]]; then
   echo "Destination must end in .app" >&2
@@ -16,8 +27,8 @@ app="$stage/Relay.app"
 iconset="$stage/Relay.iconset"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$iconset"
 
-swift build --package-path "$project" --configuration release
-binary="$(swift build --package-path "$project" --configuration release --show-bin-path)/Relay"
+swift build --package-path "$project" --configuration release ${arch_flags[@]+"${arch_flags[@]}"}
+binary="$(swift build --package-path "$project" --configuration release ${arch_flags[@]+"${arch_flags[@]}"} --show-bin-path)/Relay"
 /usr/bin/install -m 755 "$binary" "$app/Contents/MacOS/Relay"
 /usr/bin/xcrun swiftc "$project/Scripts/icon.swift" -o "$stage/relay-icon"
 for size in 16 32 128 256 512; do
@@ -37,20 +48,20 @@ if [[ -n "${RELAY_SUMMARY_MODEL:-}" ]]; then
   /usr/bin/install -m 644 "$project/ModelLicenses/RelaySummary.md" "$models/RelaySummary.md"
 fi
 
-cat > "$app/Contents/Info.plist" <<'PLIST'
+cat > "$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>CFBundleDevelopmentRegion</key><string>en</string>
     <key>CFBundleExecutable</key><string>Relay</string>
-    <key>CFBundleIdentifier</key><string>com.relay.sessions</string>
+    <key>CFBundleIdentifier</key><string>$bundle_id</string>
     <key>CFBundleIconFile</key><string>Relay</string>
     <key>CFBundleName</key><string>Relay</string>
     <key>CFBundleDisplayName</key><string>Relay</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>0.15.2</string>
-    <key>CFBundleVersion</key><string>29</string>
+    <key>CFBundleShortVersionString</key><string>$version</string>
+    <key>CFBundleVersion</key><string>$build</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>LSUIElement</key><true/>
     <key>NSAppleEventsUsageDescription</key>
@@ -60,7 +71,12 @@ cat > "$app/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 /usr/bin/plutil -lint "$app/Contents/Info.plist"
-/usr/bin/codesign --force --sign - "$app"
+if [[ "$identity" == "-" ]]; then
+  /usr/bin/codesign --force --sign - "$app"
+else
+  # A Developer ID signature needs the hardened runtime and a timestamp to pass notarization.
+  /usr/bin/codesign --force --options runtime --timestamp --sign "$identity" "$app"
+fi
 /usr/bin/codesign --verify --strict "$app"
 if [[ -e "$destination" ]]; then rm -rf "$destination"; fi
 mv "$app" "$destination"
