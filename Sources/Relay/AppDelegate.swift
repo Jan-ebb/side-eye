@@ -3,7 +3,7 @@ import ApplicationServices
 import SwiftUI
 
 private let fixtureMode = CommandLine.arguments.contains("--ui-check") ||
-    CommandLine.arguments.contains("--settings-check")
+    CommandLine.arguments.contains("--settings-check") || CommandLine.arguments.contains("--welcome-check")
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let defaults = UserDefaults.standard
     private lazy var preferences = PreferencesModel(store: store, defaults: fixtureMode ? nil : .standard)
     private var preferencesWindow: SettingsWindow?
+    private var welcomeWindow: NSWindow?
     private var overlay: OverlayController?
     private var scanner: SessionScanner?
     private var hotkeys: Hotkeys?
@@ -33,6 +34,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if CommandLine.arguments.contains("--settings-check") {
             loadSettingsFixture()
+            return
+        }
+        if CommandLine.arguments.contains("--welcome-check") {
+            showWelcome()
             return
         }
 
@@ -76,6 +81,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         })
         self.scanner = scanner
         scanner.start()
+        showWelcomeOnFirstRun()
         wakeToken = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -105,6 +111,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ("Show Archive", #selector(showArchive), ""),
             ("Add chat link…", #selector(addSessionLink), ""),
             ("Settings…", #selector(showSettings), ","),
+            ("Welcome to Relay…", #selector(showWelcome), ""),
         ]
         for (title, action, key) in entries {
             let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
@@ -140,6 +147,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         NSApp.activate()
         window.makeKeyAndOrderFront(nil)
+    }
+
+    /// Opens the welcome window once, for someone who has never run Relay. Saved history means they have.
+    private func showWelcomeOnFirstRun() {
+        guard defaults.object(forKey: "welcomeSeen") == nil else { return }
+        defaults.set(true, forKey: "welcomeSeen")
+        if defaults.object(forKey: "sessionHistory") == nil { showWelcome() }
+    }
+
+    @objc private func showWelcome() {
+        preferences.refreshSystemState()
+        if welcomeWindow == nil {
+            let size = WelcomeView.windowSize
+            let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.titled, .closable],
+                                  backing: .buffered, defer: false)
+            window.title = "Welcome to Relay"
+            window.isReleasedWhenClosed = false
+            window.contentViewController = NSHostingController(rootView: WelcomeView(
+                model: preferences, store: store,
+                showRelay: { [weak self] in self?.overlay?.show(keyboard: true) },
+                done: { [weak self] in self?.welcomeWindow?.close() }))
+            window.setContentSize(size)
+            window.center()
+            welcomeWindow = window
+        }
+        NSApp.activate()
+        welcomeWindow?.makeKeyAndOrderFront(nil)
     }
 
     private func performPreferenceAction(_ action: PreferencesModel.Action) {
