@@ -692,9 +692,38 @@ enum SelfChecks {
         precondition(DesktopProvider.grokStatus(awaitingInput: false, unread: false, agentRepliedLast: false, tail: sent,
                                                 now: now.addingTimeInterval(3_600)) == .idle,
                      "An old message of yours with no reply is not work in progress")
+        func status(_ tail: GrokTail, after seconds: TimeInterval = 0) -> SessionStatus {
+            DesktopProvider.grokStatus(awaitingInput: false, unread: true, agentRepliedLast: !tail.fromUser, tail: tail,
+                                       now: now.addingTimeInterval(seconds))
+        }
+        let fresh = GrokTail(fromUser: false, text: answer.text, date: now.addingTimeInterval(-5))
+        precondition(status(fresh) == .working && status(fresh, after: 30) == .ready,
+                     "A reply should settle for a few seconds before it counts as finished")
+        let ack = GrokTail(fromUser: false, text: "Mache ich, einen Moment.", date: now.addingTimeInterval(-120), opensReply: true)
+        precondition(status(ack) == .working && status(ack, after: 240) == .ready,
+                     "A short first reply is probably not the last, whatever language it is in")
+        let report = GrokTail(fromUser: false, text: String(repeating: "Detail. ", count: 60),
+                              date: now.addingTimeInterval(-60), opensReply: true)
+        precondition(status(report) == .ready, "A long first reply is an answer, not an acknowledgement")
+        precondition(status(progress, after: 5 * 60) == .ready, "A progress note should not hold Working past five minutes")
+        let mine = GrokTail(fromUser: true, text: "any update?", date: now.addingTimeInterval(-11 * 60))
+        let handoff = GrokTail(fromUser: true, text: "sync done", date: now.addingTimeInterval(-11 * 60), fromAgent: true)
+        precondition(DesktopProvider.grokStatus(awaitingInput: false, unread: false, agentRepliedLast: false, tail: mine, now: now) == .idle
+                     && status(handoff) == .working && status(handoff, after: 5 * 60) != .working,
+                     "A request from another agent may take longer to answer than one from you")
+        let streaming = GrokTail(fromUser: false, text: String(repeating: "Long answer. ", count: 60),
+                                 date: now.addingTimeInterval(-90), isStreaming: true)
+        precondition(status(streaming) == .working, "A message Grok Bot is still writing means the agent is working")
         precondition(!DesktopProvider.grokAgentSpokeLast("t1093u") && DesktopProvider.grokAgentSpokeLast("t1093s3811")
                      && DesktopProvider.grokAgentSpokeLast("agent-outbound-117a") && !DesktopProvider.grokAgentSpokeLast(nil))
         precondition(DesktopProvider.grokStatus(awaitingInput: true, unread: true, agentRepliedLast: false, tail: sent, now: now) == .needsInput)
+        let afterAnswer = GrokTail(fromUser: false, text: nil, date: now.addingTimeInterval(-60), answeredWidget: true)
+        precondition(status(afterAnswer) == .working, "Once you answer its question, the agent owes the next message")
+        precondition(DesktopProvider.soundsInProgress("Great, I'll create the Budget bot first and then build the sheet.")
+                     && DesktopProvider.soundsInProgress("Hi Sam! I'm starting on the budget sheet now: pulling the data.")
+                     && !DesktopProvider.soundsInProgress("The sheet is ready. Tell me if anything looks off and I'll fix it.")
+                     && !DesktopProvider.soundsInProgress("Here is the plan, which I'll follow once you approve it."),
+                     "A promise counts at the start of any sentence, not in the middle of one")
         precondition(DesktopProvider.soundsInProgress("Moving the pharmacy stop to the walk home now.")
                      && DesktopProvider.soundsInProgress("I’ll dig through the archive for anything that's missing.")
                      && !DesktopProvider.soundsInProgress("Done. Your calendar has the dentist at 3."))

@@ -162,7 +162,7 @@ final class DesktopProvider: @unchecked Sendable {
             let updatedAt = Self.milliseconds(activity > 0 ? activity : (row.createdAt ?? 0))
             guard updatedAt >= cutoff else { return nil }
             // Grok Bot keeps no running flag on disk, so read the end of a recently active transcript.
-            let tail = now.timeIntervalSince(updatedAt) < Self.grokUserTurnWindow
+            let tail = now.timeIntervalSince(updatedAt) < Self.grokTailWindow
                 ? grokTail(at: root.appending(path: Self.grokBlobName(prefix + "transcript.replicas." + row.id)), id: row.id)
                 : nil
             let unread = row.hasUnread == true || (row.unreadCount ?? 0) > 0 || (row.unreadThreadCount ?? 0) > 0
@@ -184,8 +184,16 @@ final class DesktopProvider: @unchecked Sendable {
     }
 
     /// How long a sent message counts as the agent working on it, and how long a progress note does.
-    static let grokUserTurnWindow: TimeInterval = 30 * 60
-    static let grokProgressWindow: TimeInterval = 15 * 60
+    // Grok Bot records no running flag, so Working is read from the end of the transcript. The windows
+    // come from measured turns: a request from you got its first answer within 3 minutes every time and
+    // one from another agent within 15; after a message that looks like progress, more followed in 85%
+    // of cases and almost never after 5 silent minutes; after any other message, more followed in 48%
+    // of cases, mostly within seconds, and in 16% once 20 seconds had passed.
+    static let grokTailWindow: TimeInterval = 30 * 60
+    static let grokRequestWindow: TimeInterval = 10 * 60
+    static let grokAgentRequestWindow: TimeInterval = 15 * 60
+    static let grokProgressWindow: TimeInterval = 5 * 60
+    static let grokSettleWindow: TimeInterval = 20
 
     /// Grok Bot names your messages "t<turn>u"; the agent's carry a sequence number or an outbound ID.
     static func grokAgentSpokeLast(_ entryID: String?) -> Bool {
@@ -198,16 +206,33 @@ final class DesktopProvider: @unchecked Sendable {
         if awaitingInput { return .needsInput }
         if let tail {
             let age = now.timeIntervalSince(tail.date)
-            // You sent the newest message: the agent has picked up your request.
-            if tail.fromUser && age < grokUserTurnWindow { return .working }
-            // The agent's newest message says it is still going, such as "The search is running".
-            if !tail.fromUser, age < grokProgressWindow, let text = tail.text, soundsInProgress(text) { return .working }
+            if tail.isStreaming && age < grokAgentRequestWindow { return .working }
+            let window: TimeInterval
+            if tail.fromUser {
+                // A request waits for its first answer.
+                window = tail.fromAgent ? grokAgentRequestWindow : grokRequestWindow
+            } else if tail.answeredWidget {
+                // You answered the agent's question, so it owes you the next message.
+                window = grokRequestWindow
+            } else {
+                // Agents usually send several messages in a row, so the newest one is not yet the last.
+                window = looksLikeProgress(tail) ? grokProgressWindow : grokSettleWindow
+            }
+            if age < window { return .working }
         }
-        // A reply you have read is still finished work: it stays in Review until you archive it or it fades.
+        // A reply you have read is still finished work: it stays in Review until you archive it.
         return unread || agentRepliedLast ? .ready : .idle
     }
 
-    /// True for an interim note that promises more, not for a final answer.
+    /// True for a message that is probably not the agent's last: a short first reply to a request,
+    /// in any language, or wording that promises more.
+    static func looksLikeProgress(_ tail: GrokTail) -> Bool {
+        guard !tail.fromUser, let text = tail.text else { return false }
+        return (tail.opensReply && text.count <= 300) || soundsInProgress(text)
+    }
+
+    /// True for an interim note that promises more, not for a final answer. The promise can open any
+    /// sentence and often follows a short lead-in: "Great, I'll create…", "Hi Sam! I'm starting…".
     static func soundsInProgress(_ text: String) -> Bool {
         let text = text.lowercased().replacingOccurrences(of: "’", with: "'")
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -215,23 +240,54 @@ final class DesktopProvider: @unchecked Sendable {
         let openings = ["i'm ", "i am ", "i'll ", "i will ", "let me ", "working on", "looking into", "checking ",
                         "searching ", "digging ", "pulling ", "moving ", "on it", "one moment", "give me a",
                         "hang tight", "starting ", "kicking off", "running "]
-        if openings.contains(where: text.hasPrefix) { return true }
+        for sentence in sentences(in: text) {
+            if openings.contains(where: sentence.hasPrefix) { return true }
+            if let comma = sentence.range(of: ", "),
+               sentence.distance(from: sentence.startIndex, to: comma.lowerBound) <= 14,
+               openings.contains(where: sentence[comma.upperBound...].hasPrefix) { return true }
+        }
         let markers = ["is running", "still running", "will take a few", "take a few minutes", "in the background",
                        "i'll send", "i'll follow up", "i'll let you know", "get back to you", "be right back",
                        "still working"]
         return markers.contains(where: text.contains)
     }
 
+    /// Splits at sentence punctuation followed by a space, and at line breaks.
+    private static func sentences(in text: String) -> [Substring] {
+        var sentences: [Substring] = []
+        var start = text.startIndex
+        var index = text.startIndex
+        while index < text.endIndex {
+            let next = text.index(after: index)
+            let character = text[index]
+            if character.isNewline || (".!?:;".contains(character) && (next == text.endIndex || text[next].isWhitespace)) {
+                let sentence = text[start..<next].drop(while: \.isWhitespace)
+                if !sentence.isEmpty { sentences.append(sentence) }
+                start = next
+            }
+            index = next
+        }
+        let rest = text[start...].drop(while: \.isWhitespace)
+        if !rest.isEmpty { sentences.append(rest) }
+        return sentences
+    }
+
     private func grokTail(at url: URL, id: String) -> GrokTail? {
         guard let stamp = FileStamp(url: url) else { return nil }
         if let cached = grokTails[id], cached.stamp == stamp { return cached.tail }
-        guard let transcript: GrokEnvelope<GrokTranscriptTail> = Self.decodeBlob(at: url, maximumSize: 4_000_000),
-              let last = transcript.value.entries.last(where: { $0.kind == "message" || $0.kind == "send-message" }),
-              let timestamp = last.timestampMs
+        guard let transcript: GrokEnvelope<GrokTranscriptTail> = Self.decodeBlob(at: url, maximumSize: 4_000_000)
         else { return nil }
-        let tail = GrokTail(fromUser: last.kind == "message" && last.role == "user",
-                            text: last.message?.content ?? last.content,
-                            date: Self.milliseconds(timestamp))
+        let messages = transcript.value.entries.filter { $0.kind == "message" || $0.kind == "send-message" }
+        guard let last = messages.last, let timestamp = last.timestampMs else { return nil }
+        let fromUser = last.isRequest
+        // An agent message opens the reply when the message before it is the request it answers, or a
+        // question the agent put to you: answering a widget adds no message of yours to the transcript.
+        let previous = messages.dropLast().last
+        let opensReply = !fromUser && (previous?.isRequest == true || previous?.isWidget == true)
+        let tail = GrokTail(fromUser: fromUser, text: last.message?.content ?? last.content,
+                            date: Self.milliseconds(timestamp), fromAgent: fromUser && last.fromAgent,
+                            opensReply: opensReply, isStreaming: last.isStreaming,
+                            answeredWidget: last.isWidget && last.wasAnswered)
         grokTails[id] = (stamp, tail)
         return tail
     }
@@ -399,10 +455,20 @@ private struct CursorCloudRow: Decodable {
 }
 
 /// The newest message in a Grok Bot transcript.
+/// The newest message in a Grok Bot transcript and how it sits in its turn.
 struct GrokTail: Equatable {
+    /// True when the newest message is a request, from you or from another agent.
     let fromUser: Bool
     let text: String?
     let date: Date
+    /// For a request: another agent sent it, not you.
+    var fromAgent = false
+    /// For an agent message: it is the first one since the request it answers.
+    var opensReply = false
+    /// Grok Bot is still writing this message.
+    var isStreaming = false
+    /// The newest message is a question from the agent that you have already answered.
+    var answeredWidget = false
 }
 
 private struct GrokTranscriptTail: Decodable {
@@ -411,11 +477,13 @@ private struct GrokTranscriptTail: Decodable {
     struct Entry: Decodable {
         struct Outgoing: Decodable {
             let content: String?
+            let type: String?
             init(from decoder: Decoder) throws {
                 let fields = try? decoder.container(keyedBy: CodingKeys.self)
                 content = try? fields?.decodeIfPresent(String.self, forKey: .content)
+                type = try? fields?.decodeIfPresent(String.self, forKey: .type)
             }
-            private enum CodingKeys: String, CodingKey { case content }
+            private enum CodingKeys: String, CodingKey { case content, type }
         }
 
         let kind: String
@@ -423,6 +491,17 @@ private struct GrokTranscriptTail: Decodable {
         let content: String?
         let message: Outgoing?
         let timestampMs: Int64?
+        let isStreaming: Bool
+        /// Requests from other agents carry a fromAgent object; yours do not.
+        let fromAgent: Bool
+
+        /// You answered this widget. The answer is stored on the widget, not as a message of yours.
+        let wasAnswered: Bool
+
+        /// A message the agent has to answer: yours, or one another agent sent it.
+        var isRequest: Bool { kind == "message" && role == "user" }
+        /// A question or approval the agent put to you.
+        var isWidget: Bool { kind == "send-message" && (message?.type == "widget" || message?.type == "auto-review-approval") }
 
         init(from decoder: Decoder) throws {
             let fields = try decoder.container(keyedBy: CodingKeys.self)
@@ -431,9 +510,14 @@ private struct GrokTranscriptTail: Decodable {
             content = try? fields.decodeIfPresent(String.self, forKey: .content)
             message = try? fields.decodeIfPresent(Outgoing.self, forKey: .message)
             timestampMs = try? fields.decodeIfPresent(Int64.self, forKey: .timestampMs)
+            isStreaming = (try? fields.decodeIfPresent(Bool.self, forKey: .isStreaming)) == true
+            fromAgent = fields.contains(.fromAgent) && (try? fields.decodeNil(forKey: .fromAgent)) != true
+            wasAnswered = fields.contains(.respondedValue) && (try? fields.decodeNil(forKey: .respondedValue)) != true
         }
 
-        private enum CodingKeys: String, CodingKey { case kind, role, content, message, timestampMs }
+        private enum CodingKeys: String, CodingKey {
+            case kind, role, content, message, timestampMs, isStreaming, fromAgent, respondedValue
+        }
     }
 }
 
