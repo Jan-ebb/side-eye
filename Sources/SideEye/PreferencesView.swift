@@ -11,7 +11,6 @@ enum PreferencesSection: String, CaseIterable, Identifiable {
 struct PreferencesView: View {
     @ObservedObject var model: PreferencesModel
     @ObservedObject var store: SessionStore
-    @State private var showsOptionalSources: Bool
     @State private var showsStatusGuide: Bool
     @State private var showsAgentChoices: Bool
     /// The main agents when the pane opened. They lead the list and stay put while you check and
@@ -25,7 +24,6 @@ struct PreferencesView: View {
     init(model: PreferencesModel, store: SessionStore, expanded: Bool = false) {
         self.model = model
         self.store = store
-        _showsOptionalSources = State(initialValue: expanded)
         _showsStatusGuide = State(initialValue: expanded)
         _showsAgentChoices = State(initialValue: expanded)
     }
@@ -155,36 +153,6 @@ struct PreferencesView: View {
                 SettingsDivider()
                 sourceRow(.grok)
                 if isOn(.grok) { grokOptions }
-            }
-            SettingsGroup(title: "More apps") {
-                SettingsDisclosure(title: "Instinct via Messages", isExpanded: $showsOptionalSources) {
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text("An agent you reach by text message. Side Eye watches one Messages conversation for its replies.")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .padding(.bottom, 8)
-                        Divider()
-                        sourceToggle(.instinct, title: "Track Instinct replies", flush: true)
-                        Divider()
-                        SettingsRow(flush: true) {
-                            SettingsLabel(title: "Recipient",
-                                          detail: model.instinctConfigured ? "Connected" : "Choose the Instinct chat in Messages.")
-                        } control: {
-                            Button(model.instinctConfigured ? "Edit…" : "Connect…", action: model.configureInstinct)
-                                .controlSize(.small)
-                        }
-                        if model.instinctConfigured {
-                            Divider()
-                            SettingsRow(flush: true) {
-                                SettingsLabel(title: "Reply tracking", detail: "Allow Side Eye to check for Messages replies.")
-                            } control: {
-                                Button("Open Privacy Settings", action: model.openFullDiskAccess)
-                                    .controlSize(.small)
-                            }
-                        }
-                    }
-                }
             }
         }
         .onAppear { if leadingAgentIDs == nil { leadingAgentIDs = store.mainGrokIDs } }
@@ -373,11 +341,6 @@ struct PreferencesView: View {
                             keys: ["⌘K"])
             }
         }
-    }
-
-    private func sourceToggle(_ source: Source, title: String? = nil, flush: Bool = false) -> some View {
-        settingToggle(title ?? source.name, flush: flush,
-                      value: Binding(get: { isOn(source) }, set: { model.setSource(source, enabled: $0) }))
     }
 
     private var unavailableRowShortcuts: String? {

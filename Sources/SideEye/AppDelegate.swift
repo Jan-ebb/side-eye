@@ -181,8 +181,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .moveOverlay: overlay?.moveToPointerDisplay()
         case .restoreArchived: store.restoreHidden()
         case .refreshSources: scanner?.refresh()
-        case .configureInstinct: configureInstinct()
-        case .openFullDiskAccess: openFullDiskAccess()
         }
     }
 
@@ -274,35 +272,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         overlay?.report(store.undoHide() ? "Last move undone" : "Nothing to undo")
     }
 
-    @objc private func configureInstinct() {
-        let alert = makeAlert("Connect Instinct",
-                              "Enter the phone number or email address of your one-to-one Instinct conversation in Messages. Allow Full Disk Access for Side Eye to detect replies.")
-        let field = NSTextField(string: defaults.string(forKey: "instinctRecipient") ?? "")
-        field.placeholderString = "Phone number or email"
-        field.frame.size = NSSize(width: 280, height: 24)
-        alert.accessoryView = field
-        alert.addButton(withTitle: "Save")
-        alert.addButton(withTitle: "Cancel")
-        alert.window.initialFirstResponder = field
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        let value = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        if value.isEmpty {
-            defaults.removeObject(forKey: "instinctRecipient")
-        } else if let recipient = DesktopProvider.normalizedRecipient(value) {
-            defaults.set(recipient, forKey: "instinctRecipient")
-            defaults.set(true, forKey: Source.instinct.enabledKey)
-        } else {
-            overlay?.report("Enter a valid phone number or email")
-            return
-        }
-        scanner?.refresh()
-    }
-
-    @objc private func openFullDiskAccess() {
-        let raw = "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_AllFiles"
-        if let url = URL(string: raw) { NSWorkspace.shared.open(url) }
-    }
-
     @objc private func addSessionLink() {
         let alert = makeAlert("Add a chat link",
                               "Use a chat’s share or deep link to give it a shortcut in Side Eye.")
@@ -327,7 +296,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let label = title.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         let address = link.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        let supported = ["https", "codex", "claude", "cursor", "grok", "grokbot", "sms", "imessage", "messages"]
+        let supported = ["https", "codex", "claude", "cursor", "grok", "grokbot"]
         guard !label.isEmpty, let url = URL(string: address), let scheme = url.scheme?.lowercased(),
               supported.contains(scheme), (scheme != "https" || url.host != nil),
               Source.allCases.indices.contains(sources.indexOfSelectedItem) else {

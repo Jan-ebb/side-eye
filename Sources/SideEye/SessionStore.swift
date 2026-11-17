@@ -599,7 +599,7 @@ final class SessionStore: ObservableObject {
     /// Why the Inbox is empty for someone new: no supported app has data here, or none has a chat yet.
     enum Emptiness { case noApps, noChats, caughtUp }
     var emptiness: Emptiness {
-        let apps = Source.allCases.filter { $0 != .instinct && $0.isEnabled(in: defaults) }
+        let apps = Source.allCases.filter { $0.isEnabled(in: defaults) }
         if !apps.contains(where: \.hasLocalData) { return .noApps }
         return latest.isEmpty && hiddenCount == 0 ? .noChats : .caughtUp
     }

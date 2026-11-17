@@ -329,10 +329,6 @@ private extension SessionRow {
 
     var stateTitle: String {
         if session.status == .unknown && session.detail == "Pinned link" { return "Pinned link" }
-        if session.source == .instinct {
-            if session.detail == "Waiting for reply" { return session.detail }
-            if session.detail.contains("Full Disk Access") { return "Reply tracking off" }
-        }
         return statusLabel
     }
 
@@ -344,7 +340,7 @@ private extension SessionRow {
             return "The source reports an active turn."
         case .ready:
             return needsReview ? "Queued for review." : "The latest update is marked as read."
-        case .idle where session.source != .instinct:
+        case .idle:
             if isStale { return "No activity reported in the last eight hours." }
             return showsUnreadDot ? "Marked as unread." : "Side Eye sees no new update or input request."
         default:

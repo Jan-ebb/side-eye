@@ -864,7 +864,7 @@ enum SelfChecks {
                    stateSummary: "The cloud agent is adjusting export spacing and checking narrow layouts."),
             sample("four", .grok, "Research shortcuts", .idle, previousDay,
                    stateSummary: "The shortcut was tested successfully in full-screen windows."),
-            sample("five", .instinct, "Instinct", .unknown, .distantPast),
+            sample("five", .claude, "Scratch notes", .unknown, .distantPast),
         ] + (6...16).map { position in
             if position == 6 {
                 var read = sample("row-6", .codex, "Check deployment notes", .ready, previousDay,

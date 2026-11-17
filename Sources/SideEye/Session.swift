@@ -1,7 +1,7 @@
 import Foundation
 
 enum Source: String, Codable, CaseIterable, Sendable {
-    case codex, claude, cursor, grok, instinct
+    case codex, claude, cursor, grok
 
     var name: String {
         switch self {
@@ -9,7 +9,6 @@ enum Source: String, Codable, CaseIterable, Sendable {
         case .claude: "Claude Code"
         case .cursor: "Cursor"
         case .grok: "Grok Bot"
-        case .instinct: "Instinct"
         }
     }
 
@@ -19,7 +18,6 @@ enum Source: String, Codable, CaseIterable, Sendable {
         case .claude: "asterisk"
         case .cursor: "cursorarrow"
         case .grok: "bolt"
-        case .instinct: "bubble.left"
         }
     }
 
@@ -33,14 +31,13 @@ enum Source: String, Codable, CaseIterable, Sendable {
         case .claude: folders = [home.appending(path: ".claude"), support.appending(path: "Claude/claude-code-sessions")]
         case .cursor: folders = [support.appending(path: "Cursor")]
         case .grok: folders = [support.appending(path: "Grok Bot")]
-        case .instinct: return true
         }
         return folders.contains { FileManager.default.fileExists(atPath: $0.path) }
     }
 
     var enabledKey: String { "sourceEnabled." + rawValue }
     func isEnabled(in defaults: UserDefaults?) -> Bool {
-        defaults?.object(forKey: enabledKey) as? Bool ?? (self != .instinct)
+        defaults?.object(forKey: enabledKey) as? Bool ?? true
     }
 }
 

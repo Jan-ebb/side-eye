@@ -101,9 +101,8 @@ Completion and input nudges show the same sentence. If it finishes after the nud
 | Claude Code | Live Desktop and terminal sessions, plus available CLI background jobs. Working, waiting, and completion come from the session registry and CLI. | Exact Desktop link or terminal TTY. Terminal switching can require macOS Automation access. Ghostty needs 1.4 or later for TTY lookup. |
 | Cursor | Local agent chats and cloud agents active in the last 48 hours. Status comes from available generation, approval, and unread fields. | Exact local or cloud agent link |
 | Grok Bot | Agent chats active in the last 48 hours. The local roster supplies unread replies and requests for input. | Exact agent link. The roster identifies the agent even when an unread reply is in one of its subthreads. |
-| Instinct | Set it up under **Settings → Apps → More apps → Instinct via Messages**: press **Connect…** and enter the phone number or email address of your one-to-one Instinct chat. To detect unread replies in Messages, grant Side Eye Full Disk Access with **Open Privacy Settings** in the same place. | Native Messages recipient link |
 
-Side Eye scans local metadata about every four seconds and keeps archived chats and app settings in local preferences. The Messages query reads timestamps and delivery flags for the configured conversation. Changes to apps’ local formats can affect discovery or state reporting.
+Side Eye scans local metadata about every four seconds and keeps archived chats and app settings in local preferences. Changes to apps’ local formats can affect discovery or state reporting.
 
 To show only your main Grok Bot agents, open **Settings → Apps**, choose **Main only** next to **Agents shown** under Grok Bot, and check as many agents as you like. An agent you create later is shown by itself unless you turn off **Show new agents automatically**. Each app in the list says how many chats the last scan found, or why it found none. The list holds every agent in Grok Bot, including archived ones and ones with no recent chat. The sidebar shows a **Main** badge on your marked agents.
 

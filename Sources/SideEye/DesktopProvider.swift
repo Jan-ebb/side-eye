@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 import SQLite3
 
@@ -24,8 +23,7 @@ final class DesktopProvider: @unchecked Sendable {
         let cursor = Source.cursor.isEnabled(in: defaults) ? cursorSessions(since: cutoff) : []
         let grok = Source.grok.isEnabled(in: defaults) ? grokSessions(since: cutoff) : []
         if !Source.grok.isEnabled(in: defaults) { grokAgents = [] }
-        let instinct = Source.instinct.isEnabled(in: defaults) ? instinctSession() : []
-        return cursor + grok + instinct
+        return cursor + grok
     }
 
     private func cursorSessions(since cutoff: Date) -> [Session] {
@@ -293,97 +291,6 @@ final class DesktopProvider: @unchecked Sendable {
         return tail
     }
 
-    private func instinctSession() -> [Session] {
-        guard let recipient = Self.normalizedRecipient(defaults.string(forKey: "instinctRecipient") ?? "") else { return [] }
-        var link = URLComponents()
-        link.scheme = "messages"
-        link.host = "open"
-        link.queryItems = [URLQueryItem(name: "addresses", value: recipient)]
-        // URLComponents leaves literal "+" in query values, where the handler may read it as a space.
-        link.percentEncodedQuery = link.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
-        guard let address = link.url?.absoluteString else { return [] }
-
-        let url = home.appending(path: "Library/Messages/chat.db")
-        let database = ReadOnlyDatabase(url)
-        let newest = database.flatMap { newestInstinctMessage(in: $0, for: recipient) }
-        let status: SessionStatus
-        let detail: String
-        if let newest {
-            if newest.fromMe {
-                status = .idle
-                detail = "Waiting for reply"
-            } else {
-                status = .ready
-                detail = "Messages"
-            }
-        } else {
-            status = .unknown
-            detail = database == nil ? "Reply tracking needs Full Disk Access" : "No matching one-to-one Messages chat"
-        }
-        return [Session(
-            id: Self.instinctID(recipient), source: .instinct, title: "Instinct", detail: detail,
-            status: status, updatedAt: newest?.date ?? .distantPast, route: .url(address),
-            activityID: newest.map { String($0.id) },
-            reviewedBySource: newest.flatMap { $0.fromMe ? nil : !$0.unread },
-            completedAt: newest?.lastIncoming
-        )]
-    }
-
-    private func newestInstinctMessage(in database: ReadOnlyDatabase, for recipient: String) -> MessageMetadata? {
-        // Match a one-to-one chat by its handle and select only its newest message's delivery metadata.
-        // Apple dates may use seconds or nanoseconds since 2001.
-        let query = """
-        SELECT m.date, m.is_from_me, m.is_read, m.ROWID,
-               MAX(CASE WHEN m.is_from_me = 0 THEN m.date END) OVER ()
-        FROM handle AS h
-        JOIN chat_handle_join AS ch ON ch.handle_id = h.ROWID
-        JOIN chat_message_join AS cm ON cm.chat_id = ch.chat_id
-        JOIN message AS m ON m.ROWID = cm.message_id
-        WHERE (h.id = ?1 COLLATE NOCASE OR h.id = ?2)
-          AND (SELECT COUNT(*) FROM chat_handle_join AS participants WHERE participants.chat_id = ch.chat_id) = 1
-          AND m.date > 0 AND COALESCE(m.associated_message_type, 0) = 0
-        ORDER BY m.date DESC, m.ROWID DESC
-        LIMIT 1
-        """
-        let alternate = recipient.contains("@") ? recipient :
-            (recipient.hasPrefix("+") ? String(recipient.dropFirst()) : "+" + recipient)
-        return database.read(query, bind: { statement in
-            sqlite3_bind_text(statement, 1, recipient, -1, ReadOnlyDatabase.transient)
-            sqlite3_bind_text(statement, 2, alternate, -1, ReadOnlyDatabase.transient)
-        }) { row -> MessageMetadata? in
-            guard let date = Self.messagesDate(row.int64(0)) else { return nil }
-            return MessageMetadata(
-                id: row.int64(3), date: date, fromMe: row.int64(1) == 1, unread: row.int64(2) == 0,
-                lastIncoming: Self.messagesDate(row.int64(4))
-            )
-        }.first
-    }
-
-    private static func messagesDate(_ raw: Int64) -> Date? {
-        guard raw > 0 else { return nil }
-        let seconds = raw > 1_000_000_000_000 ? Double(raw) / 1_000_000_000 : Double(raw)
-        return Date(timeIntervalSinceReferenceDate: seconds)
-    }
-
-    private static func instinctID(_ recipient: String) -> String {
-        let digest = SHA256.hash(data: Data(recipient.lowercased().utf8))
-        return "instinct:" + digest.prefix(12).map { String(format: "%02x", $0) }.joined()
-    }
-
-    static func normalizedRecipient(_ input: String) -> String? {
-        let input = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        if input.contains("@") {
-            guard input.count <= 254,
-                  input.range(of: #"\A[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\z"#, options: .regularExpression) != nil
-            else { return nil }
-            return input
-        }
-        let punctuation = CharacterSet(charactersIn: " ()-.")
-        let number = input.unicodeScalars.filter { !punctuation.contains($0) }.map(String.init).joined()
-        guard number.range(of: #"\A\+?[0-9]{5,15}\z"#, options: .regularExpression) != nil else { return nil }
-        return number
-    }
-
     private static func milliseconds(_ value: Int64) -> Date {
         Date(timeIntervalSince1970: Double(value) / 1000)
     }
@@ -568,14 +475,6 @@ private struct FileStamp: Equatable {
         self.modified = modified
         self.size = size
     }
-}
-
-private struct MessageMetadata {
-    let id: Int64
-    let date: Date
-    let fromMe: Bool
-    let unread: Bool
-    let lastIncoming: Date?
 }
 
 private final class ReadOnlyDatabase {

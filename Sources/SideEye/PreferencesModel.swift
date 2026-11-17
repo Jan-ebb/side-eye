@@ -5,7 +5,7 @@ import ServiceManagement
 @MainActor
 final class PreferencesModel: ObservableObject {
     enum Action {
-        case moveOverlay, restoreArchived, refreshSources, configureInstinct, openFullDiskAccess
+        case moveOverlay, restoreArchived, refreshSources
     }
 
     @Published var selection: PreferencesSection = .general
@@ -34,7 +34,6 @@ final class PreferencesModel: ObservableObject {
     @Published private(set) var sourceEnabled: [Source: Bool]
     /// Whether each app has left any data on this Mac for Side Eye to read.
     @Published private(set) var sourcePresent: [Source: Bool] = [:]
-    @Published private(set) var instinctConfigured = false
     @Published private(set) var hasMultipleDisplays = false
     @Published var unavailableShortcuts: Set<Shortcut> = []
     @Published private(set) var loginItemNotice: String?
@@ -60,7 +59,6 @@ final class PreferencesModel: ObservableObject {
         let loginStatus = SMAppService.mainApp.status
         launchAtLogin = loginStatus == .enabled || loginStatus == .requiresApproval
         hasMultipleDisplays = NSScreen.screens.count > 1
-        instinctConfigured = defaults?.string(forKey: "instinctRecipient")?.isEmpty == false
         sourcePresent = Dictionary(uniqueKeysWithValues: Source.allCases.map { ($0, $0.hasLocalData) })
         sourceEnabled = Dictionary(uniqueKeysWithValues: Source.allCases.map { ($0, $0.isEnabled(in: defaults)) })
     }
@@ -107,9 +105,4 @@ final class PreferencesModel: ObservableObject {
     func moveOverlay() { onAction?(.moveOverlay) }
     func restoreArchived() { onAction?(.restoreArchived) }
     func refreshSources() { onAction?(.refreshSources) }
-    func configureInstinct() {
-        onAction?(.configureInstinct)
-        refreshSystemState()
-    }
-    func openFullDiskAccess() { onAction?(.openFullDiskAccess) }
 }

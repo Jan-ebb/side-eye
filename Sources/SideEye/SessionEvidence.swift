@@ -31,7 +31,6 @@ struct SessionEvidenceReader: Sendable {
         case .claude: return claude(session, includeTranscript: includeTranscript)
         case .cursor: return cursor(session, includeTranscript: includeTranscript)
         case .grok: return grok(session, includeTranscript: includeTranscript)
-        case .instinct: return SessionEvidence()
         }
     }
 
