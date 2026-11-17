@@ -14,4 +14,10 @@ cask "side-eye" do
   zap trash: [
     "~/Library/Preferences/io.github.jan-ebb.side-eye.plist",
   ]
+
+  caveats <<~EOS
+    Side Eye is not notarized by Apple yet, so macOS blocks it the first time
+    you open it. Open it once, then click Open Anyway under
+    System Settings > Privacy & Security.
+  EOS
 end

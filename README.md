@@ -12,12 +12,20 @@ With Homebrew:
 
 ```sh
 brew tap jan-ebb/side-eye https://github.com/Jan-ebb/side-eye
-brew install --cask --no-quarantine side-eye
+brew install --cask side-eye
 ```
 
 Or download `SideEye-x.y.z.zip` from [Releases](https://github.com/Jan-ebb/side-eye/releases), unzip it and move Side Eye.app to Applications.
 
-Side Eye is not yet notarized by Apple, so macOS blocks a downloaded copy the first time. Control-click Side Eye.app and choose **Open**, or allow it under **System Settings → Privacy & Security**. The Homebrew command above skips this step with `--no-quarantine`.
+Side Eye is not yet notarized by Apple, so macOS blocks it the first time you open it, whether it came from Homebrew or from the download. Open it once and close the warning. Then go to **System Settings → Privacy & Security**, scroll down to the line about Side Eye and click **Open Anyway**. You do this once after installing and once after each update. On macOS 14 you can Control-click Side Eye.app and choose **Open** instead.
+
+If you prefer Terminal, this clears the block in one step:
+
+```sh
+xattr -dr com.apple.quarantine "/Applications/Side Eye.app"
+```
+
+A copy you build yourself is not blocked.
 
 To build it yourself, install Xcode or its command-line tools and run:
 
