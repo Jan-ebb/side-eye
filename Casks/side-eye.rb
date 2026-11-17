@@ -1,6 +1,6 @@
 cask "side-eye" do
   version "0.16.0"
-  sha256 :no_check
+  sha256 "e0becd6d4b43019b49c255f2bd2f73912e95a1422da4615a2926746f3c960a78"
 
   url "https://github.com/Jan-ebb/side-eye/releases/download/v#{version}/SideEye-#{version}.zip"
   name "Side Eye"
