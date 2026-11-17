@@ -886,6 +886,7 @@ enum SelfChecks {
                 URL(fileURLWithPath: $0)
             }
             precondition(overlay.isEdgeVisible && !overlay.isShowing)
+            overlay.followsPointer = false
             overlay.show(keyboard: false)
             precondition(overlay.isShowing && !store.keyboardMode)
             overlay.checkHoverArrowInput()
@@ -902,6 +903,7 @@ enum SelfChecks {
             if let previewDirectory { overlay.renderPreview(in: previewDirectory) }
             overlay.close()
             precondition(!overlay.isShowing && !store.keyboardMode)
+            overlay.followsPointer = true
             if CommandLine.arguments.contains("--pointer-check") {
                 if let hovered = await overlay.checkPointer() {
                     precondition(hovered, "Native hover must reveal the sidebar, support arrow navigation and auto-dismiss")

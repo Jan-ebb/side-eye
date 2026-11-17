@@ -109,6 +109,11 @@ final class OverlayController {
     var onLater: ((Session) -> Void)?
     var onRestoreArchived: ((Session) -> Void)?
     var onArchiveRead: (() -> Void)?
+    /// False while the keyboard checks run, so real input cannot disturb what they assert: a pointer
+    /// resting on the test sidebar, a click or keystroke in another app that takes the focus away, or
+    /// a key typed while the sidebar holds it.
+    var followsPointer = true
+    private var sendingTestKey = false
     var onUndo: (() -> Void)?
     var onShowSettings: (() -> Void)?
 
@@ -176,8 +181,8 @@ final class OverlayController {
         resignToken = notifications.addObserver(forName: NSWindow.didResignKeyNotification,
                                                 object: sidebar, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, self.isShowing, self.sidebar.acceptsKeyboard, self.menuTrackingDepth == 0,
-                      !self.sidebar.isKeyWindow else { return }
+                guard let self, self.followsPointer, self.isShowing, self.sidebar.acceptsKeyboard,
+                      self.menuTrackingDepth == 0, !self.sidebar.isKeyWindow else { return }
                 self.close()
             }
         }
@@ -360,7 +365,7 @@ final class OverlayController {
 
     private func highlightRow(_ id: String) {
         // Revealing or scrolling the list can move rows under a stationary pointer.
-        guard store.numberEntry == nil, keyboardSelectionLocation != NSEvent.mouseLocation else { return }
+        guard followsPointer, store.numberEntry == nil, keyboardSelectionLocation != NSEvent.mouseLocation else { return }
         keyboardSelectionLocation = nil
         if !keyboardPinned { store.keyboardMode = false }
         if store.selectedID != id { store.selectedID = id }
@@ -505,7 +510,9 @@ final class OverlayController {
                                         windowNumber: sidebar.windowNumber, context: nil,
                                         characters: text, charactersIgnoringModifiers: text,
                                         isARepeat: false, keyCode: code) {
+            sendingTestKey = true
             sidebar.sendEvent(event)
+            sendingTestKey = false
         }
     }
 
@@ -1199,6 +1206,8 @@ final class OverlayController {
     }
 
     private func handleKey(_ event: NSEvent) -> Bool {
+        // During the scripted checks only their own keys count; anything typed for real is dropped.
+        if !followsPointer && !sendingTestKey { return true }
         guard isShowing, sidebar.acceptsKeyboard else { return false }
         let flags = event.modifierFlags.intersection([.shift, .control, .option, .command])
         if store.palette != nil {
@@ -1457,7 +1466,7 @@ final class OverlayController {
     }
 
     private func closeOnOutsideClick() {
-        guard menuTrackingDepth == 0 else { return }
+        guard followsPointer, menuTrackingDepth == 0 else { return }
         let pointer = NSEvent.mouseLocation
         if !sidebar.frame.contains(pointer), !rail.frame.contains(pointer) { close() }
     }
