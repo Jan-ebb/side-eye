@@ -653,13 +653,14 @@ struct SidebarView: View {
         HStack(spacing: 4) {
             ForEach(SessionFilter.tabs, id: \.self) { filter in
                 let selected = filter == store.filter
-                let count = store.count(for: filter)
+                // Each tab says how many chats it lists.
+                let count = filter == .all ? store.inboxCount : store.count(for: filter)
                 Button { store.setFilter(filter) } label: {
                     HStack(spacing: 5) {
                         Text(filter.label)
                             .font(.system(size: 12, weight: selected ? .semibold : .medium))
                             .foregroundStyle(selected ? colors.accent : colors.body)
-                        if filter != .all && count > 0 {
+                        if count > 0 {
                             Text(String(count))
                                 .font(.system(size: 11, weight: .medium).monospacedDigit())
                                 .foregroundStyle(colors.secondary)

@@ -115,6 +115,8 @@ final class SessionStore: ObservableObject {
     var missingArchiveCount: Int { max(0, hiddenCount - archiveRows.count) }
     private var activeRows: [SessionRow] { laterRows.isEmpty ? rows : rows.filter { !isDeferred($0.id) } }
     var attentionCount: Int { activeRows.lazy.filter(Self.needsAction).count }
+    /// How many chats the Inbox lists: everything active except idle chats, which it leaves out.
+    var inboxCount: Int { activeRows.lazy.filter { SessionGroup($0) != .quiet }.count }
     func count(for filter: SessionFilter) -> Int {
         if filter == .later { return laterRows.count }
         if filter == .archive { return archiveRows.count }
