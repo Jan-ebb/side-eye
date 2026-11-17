@@ -153,6 +153,30 @@ enum SelfChecks {
         precondition(grokScope.mainGrokIDs == [main.id, "grok:old"], "Several agents can be main at once")
         grokScope.setGrokMain(id: "grok:old", isMain: false)
         precondition(grokScope.restoreArchived(main))
+
+        let agents = SessionStore(defaults: nil)
+        let firstAgent = GrokAgent(id: "grok:first", title: "First")
+        let secondAgent = GrokAgent(id: "grok:second", title: "Second", createdAt: now)
+        let thirdAgent = GrokAgent(id: "grok:third", title: "Third", createdAt: now)
+        agents.setGrokRoster([firstAgent])
+        agents.setGrokMain(id: firstAgent.id, isMain: true)
+        agents.setGrokMainOnly(true)
+        precondition(agents.mainGrokIDs == [firstAgent.id], "The firstAgent roster is the baseline; nothing in it is new")
+        agents.setGrokRoster([firstAgent, secondAgent])
+        precondition(agents.mainGrokIDs == [firstAgent.id, secondAgent.id],
+                     "An agent created later should be shown by itself while only main agents are shown")
+        agents.setIncludesNewGrokAgents(false)
+        agents.setGrokRoster([firstAgent, secondAgent, thirdAgent])
+        precondition(!agents.mainGrokIDs.contains(thirdAgent.id)
+                     && agents.availableGrokAgents.contains { $0.id == thirdAgent.id && $0.isNew(now: now) }
+                     && !firstAgent.isNew(now: now),
+                     "With the option off a new agent stays hidden but is offered, marked new")
+        agents.ingest([sample(firstAgent.id, .grok, "First", .working, now), sample(thirdAgent.id, .grok, "Third", .idle, now),
+                       sample("codex-chat", .codex, "Codex chat", .idle, now)], now: now)
+        precondition(agents.foundCount(for: .grok) == 2 && agents.foundCount(for: .grok, mainOnly: true) == 1
+                     && agents.foundCount(for: .codex) == 1 && agents.foundCount(for: .cursor) == 0
+                     && agents.lastScan == now,
+                     "Settings should be able to say what the last scan found for each app")
         grokScope.onAttention = { _ in preconditionFailure("Filtered Grok chats should stay out of the review queue") }
         grokScope.ingest([main, sample(child.id, .grok, child.title, .ready, now), newer])
         precondition(grokScope.nextAttention()?.id == newer.id && grokScope.count(for: .toReview) == 1)

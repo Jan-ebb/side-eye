@@ -32,6 +32,8 @@ final class PreferencesModel: ObservableObject {
     }
     @Published private(set) var launchAtLogin = false
     @Published private(set) var sourceEnabled: [Source: Bool]
+    /// Whether each app has left any data on this Mac for Relay to read.
+    @Published private(set) var sourcePresent: [Source: Bool] = [:]
     @Published private(set) var instinctConfigured = false
     @Published private(set) var hasMultipleDisplays = false
     @Published var unavailableShortcuts: Set<Shortcut> = []
@@ -59,6 +61,7 @@ final class PreferencesModel: ObservableObject {
         launchAtLogin = loginStatus == .enabled || loginStatus == .requiresApproval
         hasMultipleDisplays = NSScreen.screens.count > 1
         instinctConfigured = defaults?.string(forKey: "instinctRecipient")?.isEmpty == false
+        sourcePresent = Dictionary(uniqueKeysWithValues: Source.allCases.map { ($0, Self.hasData($0)) })
         sourceEnabled = Dictionary(uniqueKeysWithValues: Source.allCases.map { ($0, $0.isEnabled(in: defaults)) })
     }
 
@@ -87,6 +90,21 @@ final class PreferencesModel: ObservableObject {
         defaults?.set(enabled, forKey: source.enabledKey)
         store.refreshPreferences()
         refreshSources()
+    }
+
+    /// True when the app's own data folder exists, which is where Relay finds its chats.
+    private static func hasData(_ source: Source) -> Bool {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let support = home.appending(path: "Library/Application Support")
+        let folders: [URL]
+        switch source {
+        case .codex: folders = [home.appending(path: ".codex")]
+        case .claude: folders = [home.appending(path: ".claude"), support.appending(path: "Claude/claude-code-sessions")]
+        case .cursor: folders = [support.appending(path: "Cursor")]
+        case .grok: folders = [support.appending(path: "Grok Bot")]
+        case .instinct: return true
+        }
+        return folders.contains { FileManager.default.fileExists(atPath: $0.path) }
     }
 
     func moveOverlay() { onAction?(.moveOverlay) }

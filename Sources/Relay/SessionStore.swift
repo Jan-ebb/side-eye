@@ -106,6 +106,8 @@ final class SessionStore: ObservableObject {
     @Published var palette: PaletteState?
     @Published private(set) var grokMainOnly = false
     @Published private(set) var mainGrokIDs: Set<String> = []
+    /// While only main agents are shown, an agent created later is shown too until you uncheck it.
+    @Published private(set) var includesNewGrokAgents = true
     /// Every Grok Bot agent that can be marked as a main agent, by name.
     @Published private(set) var availableGrokAgents: [GrokAgent] = []
 
@@ -363,6 +365,10 @@ final class SessionStore: ObservableObject {
 
     private let defaults: UserDefaults?
     private var grokRoster: [GrokAgent] = []
+    /// Every Grok agent Relay has seen in the roster, so a later one can be told apart as new.
+    private var knownGrokIDs: Set<String>?
+    /// When the last scan arrived. Not published: it changes every few seconds.
+    private(set) var lastScan: Date?
     private var history = History()
     private var latest: [String: Session] = [:]
     private var lastChange: LastChange?
@@ -377,6 +383,8 @@ final class SessionStore: ObservableObject {
         showsAutomationRuns = defaults?.bool(forKey: Self.automationRunsPreferenceKey) ?? false
         grokMainOnly = defaults?.bool(forKey: "grokMainAgentsOnly") ?? false
         mainGrokIDs = Set(defaults?.stringArray(forKey: "grokMainAgentIDs") ?? [])
+        knownGrokIDs = defaults?.stringArray(forKey: "grokKnownAgentIDs").map { Set($0) }
+        includesNewGrokAgents = defaults?.object(forKey: "grokIncludeNewAgents") as? Bool ?? true
         if let data = defaults?.data(forKey: "sessionHistory"),
            let decoded = try? JSONDecoder().decode(History.self, from: data) {
             history = decoded
@@ -389,6 +397,7 @@ final class SessionStore: ObservableObject {
     }
 
     func ingest(_ sessions: [Session], now: Date = Date()) {
+        lastScan = now
         var combined: [String: Session] = [:]
         for session in history.links + sessions {
             if let existing = combined[session.id], existing.updatedAt > session.updatedAt { continue }
@@ -554,11 +563,45 @@ final class SessionStore: ObservableObject {
         rebuild()
     }
 
-    /// The agents in Grok Bot's own roster, including ones with no recent chat.
+    /// The agents in Grok Bot's own roster, including ones with no recent chat. An agent Relay has not
+    /// seen before joins the main agents by itself while only main agents are shown, so a bot you
+    /// just created does not start out hidden.
     func setGrokRoster(_ agents: [GrokAgent]) {
-        guard agents != grokRoster else { return }
+        let ids = Set(agents.map(\.id))
+        var changed = agents != grokRoster
+        if let known = knownGrokIDs {
+            let fresh = ids.subtracting(known)
+            if !fresh.isEmpty {
+                knownGrokIDs = known.union(fresh)
+                defaults?.set(knownGrokIDs?.sorted(), forKey: "grokKnownAgentIDs")
+                if grokMainOnly && includesNewGrokAgents {
+                    mainGrokIDs.formUnion(fresh)
+                    defaults?.set(mainGrokIDs.sorted(), forKey: "grokMainAgentIDs")
+                    changed = true
+                }
+            }
+        } else if !ids.isEmpty {
+            // The first roster only sets the baseline: nothing in it is new.
+            knownGrokIDs = ids
+            defaults?.set(ids.sorted(), forKey: "grokKnownAgentIDs")
+        }
+        guard changed else { return }
         grokRoster = agents
         rebuild()
+    }
+
+    func setIncludesNewGrokAgents(_ enabled: Bool) {
+        guard enabled != includesNewGrokAgents else { return }
+        includesNewGrokAgents = enabled
+        defaults?.set(enabled, forKey: "grokIncludeNewAgents")
+    }
+
+    /// How many chats the last scan found for an app, shown in Relay or not.
+    func foundCount(for source: Source, mainOnly: Bool = false) -> Int {
+        latest.values.lazy.filter { session in
+            session.source == source && !session.id.hasPrefix("link:")
+                && (!mainOnly || self.mainGrokIDs.contains(session.id))
+        }.count
     }
 
     func toggleGrokMain(id: String) {
@@ -785,9 +828,11 @@ final class SessionStore: ObservableObject {
     private func rebuild(now: Date = Date()) {
         // Settings offers every agent in Grok Bot's roster plus any Grok chat Relay has seen, archived
         // or not, so an agent can be marked as main before it is next active.
-        var grokTitles = Dictionary(grokRoster.map { ($0.id, $0.title) }, uniquingKeysWith: { first, _ in first })
-        for session in latest.values where session.source == .grok { grokTitles[session.id] = session.title }
-        let grokAgents = grokTitles.map { GrokAgent(id: $0.key, title: $0.value) }.sorted {
+        var grokByID = Dictionary(grokRoster.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        for session in latest.values where session.source == .grok {
+            grokByID[session.id] = GrokAgent(id: session.id, title: session.title, createdAt: grokByID[session.id]?.createdAt)
+        }
+        let grokAgents = grokByID.values.sorted {
             let titleOrder = $0.title.localizedStandardCompare($1.title)
             return titleOrder == .orderedSame ? $0.id < $1.id : titleOrder == .orderedAscending
         }

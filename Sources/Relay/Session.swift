@@ -76,6 +76,12 @@ struct Session: Identifiable, Codable, Equatable, Sendable {
 struct GrokAgent: Identifiable, Equatable, Sendable {
     let id: String
     let title: String
+    var createdAt: Date? = nil
+
+    /// Created in the last week: worth pointing out in Settings while it is still unfamiliar.
+    func isNew(now: Date = Date()) -> Bool {
+        createdAt.map { now.timeIntervalSince($0) < 7 * 24 * 3_600 } ?? false
+    }
 }
 
 struct SessionRow: Identifiable, Equatable {

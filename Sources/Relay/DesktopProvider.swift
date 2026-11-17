@@ -147,7 +147,8 @@ final class DesktopProvider: @unchecked Sendable {
                     guard Self.validAgentID(row.id), row.isHiddenFromSidebar != true,
                           row.isRemovedFromSidebar != true else { return nil }
                     return GrokAgent(id: "grok:\(row.id)", title: Self.displayTitle(
-                        row.name, fallback: Self.displayTitle(row.title, fallback: "Grok Bot chat")))
+                        row.name, fallback: Self.displayTitle(row.title, fallback: "Grok Bot chat")),
+                                     createdAt: row.createdAt.map(Self.milliseconds))
                 }
                 grokRosterURL = url
                 grokRosterStamp = stamp
