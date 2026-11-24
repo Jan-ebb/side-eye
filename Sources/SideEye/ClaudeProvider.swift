@@ -27,6 +27,36 @@ final class ClaudeProvider: @unchecked Sendable {
         let lastTurnCutShort: Bool?
         let lastTurnStopped: Bool?
         let errorAt: Int64?
+        let lastAssistantUuid: String?
+        let postTurnSummary: TurnNote?
+
+        /// Claude Desktop files a short note on each finished reply and removes it when the next turn starts.
+        /// It is read leniently: a note in a shape this build doesn't know counts as no note.
+        struct TurnNote: Decodable {
+            var category: String?
+            var reply: String?
+
+            private enum CodingKeys: String, CodingKey {
+                case category = "status_category", reply = "summarizes_uuid"
+            }
+
+            init(from decoder: Decoder) {
+                guard let values = try? decoder.container(keyedBy: CodingKeys.self) else { return }
+                category = try? values.decodeIfPresent(String.self, forKey: .category)
+                reply = try? values.decodeIfPresent(String.self, forKey: .reply)
+            }
+        }
+
+        /// The newest reply ends waiting on the person: a question, a choice or a go-ahead.
+        var endsAwaitingPerson: Bool {
+            guard let note = postTurnSummary, note.category == "blocked", let reply = note.reply else { return false }
+            return reply == lastAssistantUuid
+        }
+    }
+
+    /// Whether a Claude Desktop session file says its newest reply ends waiting on the person.
+    static func endsAwaitingPerson(desktopFile: Data) -> Bool {
+        (try? JSONDecoder().decode(DesktopEntry.self, from: desktopFile))?.endsAwaitingPerson == true
     }
 
     private struct AgentEntry: Decodable, Sendable {
@@ -93,6 +123,9 @@ final class ClaudeProvider: @unchecked Sendable {
             } else {
                 status = Self.interactiveStatus(rawStatus, desktop: desktop, previous: previous)
             }
+            // A reply that ends with a question for you is still a finished turn. It keeps that turn's time and
+            // read mark, and is listed under Needs you instead of Review once Claude Desktop has filed its note.
+            let asksAtTheEnd = status == .ready && desktop?.endsAwaitingPerson == true
             let statusEdge = entry.statusUpdatedAt ?? entry.startedAt
             let edge = status == .ready && statusEdge - entry.startedAt < 1_500
                 ? desktop?.lastTurnEdgeAt ?? statusEdge : statusEdge
@@ -126,8 +159,8 @@ final class ClaudeProvider: @unchecked Sendable {
                                    title: Self.title(desktop?.title ?? entry.name, directory: entry.cwd),
                                    detail: Self.detail(entry.cwd, desktop: desktopID != nil,
                                                        background: agent?.kind == "background"),
-                                   status: status, updatedAt: Self.date(edge), route: route,
-                                   activityID: "\(entry.pid):\(edge)", reviewedBySource: reviewed,
+                                   status: asksAtTheEnd ? .needsInput : status, updatedAt: Self.date(edge),
+                                   route: route, activityID: "\(entry.pid):\(edge)", reviewedBySource: reviewed,
                                    completedAt: didComplete ? Self.date(edge) : nil)
         }
 

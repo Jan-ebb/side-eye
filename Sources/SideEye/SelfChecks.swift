@@ -643,9 +643,27 @@ enum SelfChecks {
         precondition(store.nextActionID == flagged.id && store.latestReplyID == readReply.id && store.attentionCount == 1)
     }
 
-    /// A request its own app shows as read stays under Needs you without counting as unread, the way a
-    /// read reply stays under Review.
+    /// A Claude reply that ends with a question for you is listed under Needs you, once Claude Desktop's
+    /// note on that reply says so. It is the same finished turn, so it keeps its read mark.
     private static func checkClosingQuestions(now: Date) {
+        func file(_ fields: String) -> Data {
+            Data(("{\"title\": \"Plan the offsite\", \"completedTurns\": 3, " + fields + "}").utf8)
+        }
+        func note(_ category: String, for reply: String) -> String {
+            "\"postTurnSummary\": {\"status_category\": \"\(category)\", \"summarizes_uuid\": \"\(reply)\", "
+                + "\"needs_action\": \"Pick a date for the offsite\"}"
+        }
+        precondition(ClaudeProvider.endsAwaitingPerson(desktopFile: file("\"lastAssistantUuid\": \"reply-2\", " + note("blocked", for: "reply-2"))),
+                     "A reply noted as waiting on you should count")
+        precondition(!ClaudeProvider.endsAwaitingPerson(desktopFile: file("\"lastAssistantUuid\": \"reply-3\", " + note("blocked", for: "reply-2"))),
+                     "A note about an earlier reply should not count for the newest one")
+        precondition(!ClaudeProvider.endsAwaitingPerson(desktopFile: file("\"lastAssistantUuid\": \"reply-2\", " + note("completed", for: "reply-2")))
+                     && !ClaudeProvider.endsAwaitingPerson(desktopFile: file("\"lastAssistantUuid\": \"reply-2\", " + note("review_ready", for: "reply-2"))),
+                     "A reply that only hands work back belongs under Review")
+        precondition(!ClaudeProvider.endsAwaitingPerson(desktopFile: file("\"lastAssistantUuid\": \"reply-2\""))
+                     && !ClaudeProvider.endsAwaitingPerson(desktopFile: file("\"lastAssistantUuid\": \"reply-2\", \"postTurnSummary\": \"blocked\"")),
+                     "No note, or one in an unknown shape, should leave the chat under Review")
+
         let store = SessionStore(defaults: nil)
         var read = sample("asked-read", .claude, "Plan the offsite", .needsInput, now.addingTimeInterval(-40), activityID: "7:1")
         read.reviewedBySource = true
@@ -656,7 +674,7 @@ enum SelfChecks {
         precondition(!store.isAttentionPending(for: read) && store.isAttentionPending(for: unread) && store.nextActionID == unread.id,
                      "Only the closing question you have not read in Claude should ask for attention")
 
-        // A finished reply can turn into a request a moment later, without a new turn in between.
+        // The reply shows under Review as soon as it finishes, and moves when the note arrives a moment later.
         let moving = SessionStore(defaults: nil)
         moving.ingest([], now: now)
         var nudges: [SessionStatus] = []
