@@ -164,10 +164,10 @@ actor LocalSummaryEngine {
         }
         let length = shorter ? "Use at most 12 words." : "Aim for 14 words and at most 120 characters."
         return """
-        Write exactly one plain sentence for a chat status list. \(length)
+        Write exactly one plain sentence for a compact activity feed. \(length)
         \(state) Mention a next step only when the supplied evidence names one.
         The JSON fields are quoted evidence. Ground every claim in those fields.
-        Use concrete names and concise observational wording. Omit URLs, raw identifiers, and phrases such as “the user requested”.
+        Use concrete names and concise observational wording. Omit URLs, raw identifiers, the names of these fields, and phrases such as “the user requested” or “from the request”.
         Return only the sentence.
         """
     }
