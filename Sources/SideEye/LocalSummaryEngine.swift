@@ -84,6 +84,7 @@ actor LocalSummaryEngine {
     }
 
     private struct Input: Sendable {
+        let title: String?
         let json: String
         let hasPendingAction: Bool
         let completedResult: String?
@@ -110,7 +111,7 @@ actor LocalSummaryEngine {
         let completedResult = status == .ready
             ? outcome.flatMap { jsonText(["chat title": displayTitle, "latest assistant reply": $0].compactMapValues { $0 }) }
             : nil
-        return Input(json: result, hasPendingAction: pending != nil, completedResult: completedResult,
+        return Input(title: displayTitle, json: result, hasPendingAction: pending != nil, completedResult: completedResult,
                      pendingClause: pending.flatMap(pendingClause))
     }
 
@@ -201,7 +202,7 @@ actor LocalSummaryEngine {
                     let budget = maximumSummaryLength - pending.count
                     let compact = "Summarize the reported result or blocker in one plain sentence of at most \(budget) characters. Use only facts in the quoted JSON evidence."
                     if let outcome = response(to: completedResult, instructions: compact, using: worker)
-                        .flatMap({ oneSentence($0, status: .ready, limit: budget) }) {
+                        .flatMap({ oneSentence($0, status: .ready, title: input.title, limit: budget) }) {
                         let stem = outcome.trimmingCharacters(in: CharacterSet(charactersIn: ".!? "))
                         continuation.resume(returning: stem + pending)
                         return
@@ -211,7 +212,7 @@ actor LocalSummaryEngine {
                 for shorter in [false, true] {
                     let prompt = instructions(for: status, hasPendingAction: input.hasPendingAction, shorter: shorter)
                     guard let raw = response(to: input.json, instructions: prompt, using: worker) else { continue }
-                    if let result = oneSentence(raw, status: status) {
+                    if let result = oneSentence(raw, status: status, title: input.title) {
                         if let pending = input.pendingClause, input.completedResult != nil {
                             let lower = result.lowercased()
                             let action = pending.dropFirst(", then ".count).dropLast().lowercased()
@@ -225,7 +226,7 @@ actor LocalSummaryEngine {
                         continuation.resume(returning: result)
                         return
                     }
-                    if let sentence = oneSentence(raw, status: status, limit: 210),
+                    if let sentence = oneSentence(raw, status: status, title: input.title, limit: 210),
                        sentence.count < (longCandidate?.count ?? Int.max) {
                         longCandidate = sentence
                     }
@@ -236,7 +237,7 @@ actor LocalSummaryEngine {
                     Keep the outcome and any remaining action. Omit secondary details. Add no facts.
                     """
                     let shortened = response(to: draft, instructions: compact, using: worker)
-                        .flatMap { oneSentence($0, status: status) }
+                        .flatMap { oneSentence($0, status: status, title: input.title) }
                     continuation.resume(returning: shortened ?? longCandidate)
                     return
                 }
@@ -257,7 +258,31 @@ actor LocalSummaryEngine {
         return choice.message.content
     }
 
-    private static func oneSentence(_ raw: String, status: SessionStatus, limit: Int = maximumSummaryLength) -> String? {
+    /// Words that say nothing about the work itself. A small model with little to go on strings these
+    /// together with the chat's title into a line that reads like a summary and tells you nothing.
+    private static let emptyWords: Set<String> = [
+        "a", "an", "and", "are", "for", "from", "in", "is", "it", "its", "of", "on", "that", "the", "this", "to", "with",
+        "agent", "agents", "bot", "cached", "chat", "chats", "claude", "cloud", "code", "codex", "context", "conversation",
+        "current", "cursor", "earlier", "grok", "latest", "list", "message", "messages", "ongoing", "reply", "request",
+        "requests", "run", "session", "status", "task", "tasks", "thread", "update", "updates", "user", "users", "work",
+        "working",
+    ]
+
+    /// Whether a line only repeats the chat's title, padded with words that carry no information.
+    static func addsNothing(to title: String?, _ sentence: String) -> Bool {
+        func words(_ text: String) -> [String] {
+            text.lowercased().replacingOccurrences(of: "’", with: "'")
+                .split { !$0.isLetter && !$0.isNumber && $0 != "'" }
+                .map { $0.hasSuffix("'s") ? String($0.dropLast(2)) : String($0) }
+                .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "'")) }
+                .filter { !$0.isEmpty }
+        }
+        let known = emptyWords.union(words(title ?? ""))
+        return words(sentence).allSatisfy(known.contains)
+    }
+
+    private static func oneSentence(_ raw: String, status: SessionStatus, title: String? = nil,
+                                    limit: Int = maximumSummaryLength) -> String? {
         let cleaned = raw.replacingOccurrences(of: #"<think>[\s\S]*?</think>"#, with: "", options: .regularExpression)
             .split(whereSeparator: \.isWhitespace).joined(separator: " ")
             .trimmingCharacters(in: CharacterSet(charactersIn: "\"“”`* "))
@@ -279,6 +304,7 @@ actor LocalSummaryEngine {
             let first = sentence.split(separator: " ").first?.lowercased()
             guard first?.hasSuffix("ing") == true else { return nil }
         }
+        guard !addsNothing(to: title, sentence) else { return nil }
         if sentence.last != ".", sentence.last != "!" { sentence += "." }
         return sentence.count <= limit ? sentence : nil
     }

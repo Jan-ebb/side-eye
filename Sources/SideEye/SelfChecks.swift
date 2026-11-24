@@ -345,9 +345,17 @@ enum SelfChecks {
                      "Reading a closed database must not create files beside it")
     }
 
-    /// A running Cursor cloud chat whose copy on this Mac is behind the cloud still names the newest
-    /// request that copy holds.
+    /// A detail line has to say more than the chat's title does. And a Cursor cloud chat whose copy on
+    /// this Mac is behind the cloud still names the newest request that copy holds.
     private static func checkDetailLines(now: Date) {
+        precondition(LocalSummaryEngine.addsNothing(to: "Harbor", "Working on Harbor chat status.")
+                     && LocalSummaryEngine.addsNothing(to: "Harbor", "Working on a Harbor chat status list.")
+                     && LocalSummaryEngine.addsNothing(to: nil, "Working on the user’s latest request."),
+                     "A line made of the title and filler words should be turned down")
+        precondition(!LocalSummaryEngine.addsNothing(to: "Harbor", "Drafting the onboarding emails for Harbor.")
+                     && !LocalSummaryEngine.addsNothing(to: "Harbor", "Working on Harbor signup copy."),
+                     "A line that names the work should be kept")
+
         let files = FileManager.default
         let home = files.temporaryDirectory.appendingPathComponent("side-eye-cursor-cloud-" + UUID().uuidString, isDirectory: true)
         let storage = home.appendingPathComponent("Library/Application Support/Cursor/User/globalStorage", isDirectory: true)
