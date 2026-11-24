@@ -103,6 +103,7 @@ enum SelfChecks {
 
         checkAttentionFilters(now: now)
         checkAttentionMarkers(now: now)
+        checkClosingQuestions(now: now)
         checkLater(now: now)
         checkLaterReturns(now: now)
         checkArchive(now: now)
@@ -640,6 +641,44 @@ enum SelfChecks {
         store.hide(earlierInput)
         store.markRead(reply)
         precondition(store.nextActionID == flagged.id && store.latestReplyID == readReply.id && store.attentionCount == 1)
+    }
+
+    /// A request its own app shows as read stays under Needs you without counting as unread, the way a
+    /// read reply stays under Review.
+    private static func checkClosingQuestions(now: Date) {
+        let store = SessionStore(defaults: nil)
+        var read = sample("asked-read", .claude, "Plan the offsite", .needsInput, now.addingTimeInterval(-40), activityID: "7:1")
+        read.reviewedBySource = true
+        var unread = sample("asked-unread", .claude, "Draft the invitation", .needsInput, now.addingTimeInterval(-20), activityID: "8:1")
+        unread.reviewedBySource = false
+        store.ingest([read, unread], now: now)
+        precondition(store.count(for: .needsInput) == 2, "A closing question stays under Needs you whether or not you have read it")
+        precondition(!store.isAttentionPending(for: read) && store.isAttentionPending(for: unread) && store.nextActionID == unread.id,
+                     "Only the closing question you have not read in Claude should ask for attention")
+
+        // A finished reply can turn into a request a moment later, without a new turn in between.
+        let moving = SessionStore(defaults: nil)
+        moving.ingest([], now: now)
+        var nudges: [SessionStatus] = []
+        moving.onAttention = { nudges += $0.map(\.status) }
+        let finished = sample("closing", .claude, "Book the venue", .ready, now, activityID: "9:1", completedAt: now)
+        let asking = sample("closing", .claude, "Book the venue", .needsInput, now, activityID: "9:1", completedAt: now)
+        moving.ingest([finished], now: now)
+        moving.ingest([asking], now: now.addingTimeInterval(4))
+        precondition(nudges == [.ready, .needsInput] && moving.count(for: .needsInput) == 1,
+                     "An unread reply should nudge when it finishes and again when it turns out to be a question")
+
+        let quiet = SessionStore(defaults: nil)
+        quiet.ingest([], now: now)
+        var quietNudges = 0
+        quiet.onAttention = { quietNudges += $0.count }
+        var finishedRead = finished, askingRead = asking
+        finishedRead.reviewedBySource = true
+        askingRead.reviewedBySource = true
+        quiet.ingest([finishedRead], now: now)
+        quiet.ingest([askingRead], now: now.addingTimeInterval(4))
+        precondition(quietNudges == 0 && quiet.count(for: .needsInput) == 1,
+                     "A reply you are already reading in Claude should move to Needs you without a nudge")
     }
 
     private static func checkLater(now: Date) {

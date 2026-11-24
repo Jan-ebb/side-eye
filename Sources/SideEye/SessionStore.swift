@@ -922,7 +922,9 @@ final class SessionStore: ObservableObject {
     private func shouldReview(_ session: Session, includingManual: Bool = true) -> Bool {
         if includingManual && history.manuallyUnread?.contains(session.id) == true { return true }
         guard session.status.requestsAttention else { return false }
-        if session.status == .ready && session.reviewedBySource == true { return false }
+        // A reply its own app shows as read is read here too, whether it sits under Review or, because it
+        // ends with a question, under Needs you. Requests made in the middle of a run carry no such mark.
+        if session.reviewedBySource == true { return false }
         guard let receipt = history.seen[session.id], receipt.status == session.status else { return true }
         if let activityID = session.activityID { return receipt.activityID != activityID }
         return session.updatedAt > receipt.seenAt
