@@ -340,8 +340,11 @@ final class SessionStore: ObservableObject {
     private struct SavedSession: Codable, Equatable {
         let snapshot: Session
         let deferredAt: Date?
-        /// When a chat in Later comes back by itself. Nil keeps it until you move it back.
+        /// When a chat in Later comes back by itself. Nil keeps it until you move it back or its agent
+        /// does something new.
         var until: Date? = nil
+        /// The agent was working when the chat went to Later, so only the end of that run brings it back.
+        var midRun: Bool? = nil
     }
 
     private struct History: Codable, Equatable {
@@ -412,6 +415,7 @@ final class SessionStore: ObservableObject {
         missingOnce = missing
 
         let oldHistory = history
+        returnActiveChatsFromLater(in: combined)
         var completions = history.completions ?? [:]
         var attention: [Session] = []
         for (id, var session) in combined {
@@ -639,8 +643,9 @@ final class SessionStore: ObservableObject {
     func hide(_ session: Session) {
         guard let current = rows.first(where: { $0.id == session.id })?.session else { return }
         let index = shownRows.firstIndex { $0.id == current.id }
-        let deferredAt = history.savedSessions?[current.id]?.deferredAt
-        saveSession(SavedSession(snapshot: Self.snapshot(of: current), deferredAt: deferredAt), id: current.id)
+        let previous = history.savedSessions?[current.id]
+        saveSession(SavedSession(snapshot: Self.snapshot(of: current), deferredAt: previous?.deferredAt,
+                                 until: previous?.until, midRun: previous?.midRun), id: current.id)
         history.dismissed[current.id] = Date()
         var midRun = history.archivedWhileWorking ?? []
         if current.status == .working { midRun.insert(current.id) } else { midRun.remove(current.id) }
@@ -699,7 +704,8 @@ final class SessionStore: ObservableObject {
         let previous = history.savedSessions?[current.id]
         let deferSession = previous?.deferredAt == nil
         if deferSession {
-            saveSession(SavedSession(snapshot: Self.snapshot(of: current), deferredAt: Date()), id: current.id)
+            saveSession(SavedSession(snapshot: Self.snapshot(of: current), deferredAt: Date(),
+                                     midRun: current.status == .working ? true : nil), id: current.id)
         } else if latest[current.id] == nil, let previous {
             saveSession(SavedSession(snapshot: previous.snapshot, deferredAt: nil), id: current.id)
         } else {
@@ -719,8 +725,11 @@ final class SessionStore: ObservableObject {
         guard let current = rows.first(where: { $0.id == session.id })?.session else { return false }
         let index = shownRows.firstIndex { $0.id == current.id }
         let previous = history.savedSessions?[current.id]
+        let alreadyLater = previous?.deferredAt != nil
         saveSession(SavedSession(snapshot: Self.snapshot(of: current), deferredAt: previous?.deferredAt ?? Date(),
-                                 until: until), id: current.id)
+                                 until: until,
+                                 midRun: alreadyLater ? previous?.midRun : (current.status == .working ? true : nil)),
+                    id: current.id)
         lastChange = .later(current.id, previous: previous)
         rebuild()
         selectRow(afterRemoving: index)
@@ -917,6 +926,23 @@ final class SessionStore: ObservableObject {
         guard let receipt = history.seen[session.id], receipt.status == session.status else { return true }
         if let activityID = session.activityID { return receipt.activityID != activityID }
         return session.updatedAt > receipt.seenAt
+    }
+
+    /// Later is a pause, not a mute: a chat there comes back to the Inbox when its agent finishes a turn,
+    /// starts one or asks for you, the way an archived chat does. One moved to Later mid-run comes back
+    /// when that run ends. A chat that is also archived stays put unless the archive lets it go too.
+    private func returnActiveChatsFromLater(in current: [String: Session]) {
+        guard let saved = history.savedSessions else { return }
+        for (id, entry) in saved {
+            guard let movedAt = entry.deferredAt, let session = current[id],
+                  Self.hasActivity(session, after: movedAt, midRun: entry.midRun == true) else { continue }
+            if let archivedAt = history.dismissed[id],
+               !Self.hasActivity(session, after: archivedAt, midRun: history.archivedWhileWorking?.contains(id) == true) {
+                continue
+            }
+            saveSession(nil, id: id)
+            if case .later(let changed, _) = lastChange, changed == id { lastChange = nil }
+        }
     }
 
     private func isVisible(_ session: Session) -> Bool {

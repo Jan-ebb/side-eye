@@ -104,6 +104,7 @@ enum SelfChecks {
         checkAttentionFilters(now: now)
         checkAttentionMarkers(now: now)
         checkLater(now: now)
+        checkLaterReturns(now: now)
         checkArchive(now: now)
         checkArchiveReturns(now: now)
         checkGrouping(now: now)
@@ -696,6 +697,62 @@ enum SelfChecks {
         precondition(reloaded.session(in: 1)?.id == input.id, "Search should still find it")
         reloaded.setQuery(nil)
         precondition(reloaded.undoHide() && reloaded.shownRows.isEmpty && reloaded.count(for: .later) == 2)
+    }
+
+    private static func checkLaterReturns(now: Date) {
+        let store = SessionStore(defaults: nil)
+        let project = sample("cursor:bc-project", .cursor, "Landing page", .ready, now,
+                             completedAt: now.addingTimeInterval(-600))
+        let asked = sample("asked", .claude, "Approve the update", .needsInput, now.addingTimeInterval(-60))
+        let running = sample("running", .codex, "Long run", .working, now)
+        store.ingest([project, asked, running], now: now)
+        precondition(store.toggleLater(asked) == true && store.toggleLater(running) == true
+                     && store.toggleLater(project) == true && store.count(for: .later) == 3)
+
+        var nudged: [String] = []
+        store.onAttention = { nudged += $0.map(\.id) }
+        let later = now.addingTimeInterval(3_600)
+        let progress = sample(running.id, .codex, running.title, .working, later)
+        store.ingest([project, asked, progress], now: later)
+        precondition(store.count(for: .later) == 3 && nudged.isEmpty,
+                     "Rescanning, a request you already saw and progress on a run must not leave Later")
+
+        let finished = sample(project.id, .cursor, project.title, .ready, later, activityID: "turn-2", completedAt: later)
+        store.ingest([finished, asked, progress], now: later)
+        precondition(store.count(for: .later) == 2 && store.rows.first { $0.id == project.id }?.needsReview == true,
+                     "A new finished turn should bring a chat back from Later, unread")
+        precondition(nudged == [project.id], "The turn that brings a chat back from Later should nudge")
+        precondition(!store.undoHide(), "Undo must not send a returned chat back to Later")
+
+        let done = sample(running.id, .codex, running.title, .ready, later.addingTimeInterval(300),
+                          completedAt: later.addingTimeInterval(300))
+        let askedAgain = sample(asked.id, .claude, asked.title, .needsInput, later.addingTimeInterval(300))
+        store.ingest([finished, askedAgain, done], now: later.addingTimeInterval(300))
+        precondition(store.count(for: .later) == 0 && store.count(for: .all) == 3,
+                     "The end of a run and a new request should each bring their chat back from Later")
+
+        // A return time is no reason to hide new work either.
+        precondition(store.deferSession(done, until: later.addingTimeInterval(86_400)) && store.count(for: .later) == 1)
+        let again = sample(running.id, .codex, running.title, .ready, later.addingTimeInterval(900), activityID: "turn-3",
+                           completedAt: later.addingTimeInterval(900))
+        store.ingest([finished, askedAgain, again], now: later.addingTimeInterval(900))
+        precondition(store.count(for: .later) == 0 && store.returnDate(for: running.id) == nil,
+                     "New work should bring a chat back before its return time")
+
+        // Archived and in Later: it stays away until the archive would let it go as well.
+        let quiet = sample("quiet", .grok, "Quiet chat", .ready, now, completedAt: now.addingTimeInterval(-900))
+        store.ingest([finished, askedAgain, again, quiet], now: later.addingTimeInterval(900))
+        precondition(store.toggleLater(quiet) == true)
+        store.setFilter(.later)
+        store.hide(quiet)
+        store.setFilter(.all)
+        store.ingest([finished, askedAgain, again, quiet], now: later.addingTimeInterval(960))
+        precondition(store.count(for: .archive) == 1 && !store.rows.contains { $0.id == quiet.id })
+        let quietDone = sample(quiet.id, .grok, quiet.title, .ready, later.addingTimeInterval(1_200), activityID: "turn-2",
+                               completedAt: later.addingTimeInterval(1_200))
+        store.ingest([finished, askedAgain, again, quietDone], now: later.addingTimeInterval(1_200))
+        precondition(store.count(for: .archive) == 0 && store.count(for: .later) == 0 && store.count(for: .all) == 4,
+                     "New work should bring back a chat that was both in Later and archived")
     }
 
     private static func checkLegacyMigration() {
