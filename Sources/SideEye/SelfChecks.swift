@@ -113,6 +113,7 @@ enum SelfChecks {
         checkGrokWorking(now: now)
         checkLegacyMigration()
         checkClosedCodexDatabases(now: now)
+        checkDetailLines(now: now)
 
         let ordered = SessionStore(defaults: nil)
         let older = sample("older", .codex, "Older completion", .ready, now,
@@ -342,6 +343,63 @@ enum SelfChecks {
         precondition(!files.fileExists(atPath: history.path + "-wal") && !files.fileExists(atPath: history.path + "-shm")
                      && !files.fileExists(atPath: state.path + "-wal"),
                      "Reading a closed database must not create files beside it")
+    }
+
+    /// A running Cursor cloud chat whose copy on this Mac is behind the cloud still names the newest
+    /// request that copy holds.
+    private static func checkDetailLines(now: Date) {
+        let files = FileManager.default
+        let home = files.temporaryDirectory.appendingPathComponent("side-eye-cursor-cloud-" + UUID().uuidString, isDirectory: true)
+        let storage = home.appendingPathComponent("Library/Application Support/Cursor/User/globalStorage", isDirectory: true)
+        try! files.createDirectory(at: storage, withIntermediateDirectories: true)
+        defer { try? files.removeItem(at: home) }
+
+        let agent = "bc-harbor-1"
+        let cachedAt = Int64(now.timeIntervalSince1970 * 1000) - 120_000
+        // Newest first, the way Cursor's transcript index writes a cloud chat.
+        let transcript = """
+            assistant:
+            The subject lines are drafted and the body comes next.
+
+            user:
+            Draft the welcome email for new signups.
+
+            assistant:
+            The signup form is live.
+
+            user:
+            Ship the signup form.
+            """
+        createFixtureDatabase(at: storage.appendingPathComponent("state.vscdb"), sql: """
+            CREATE TABLE ItemTable (key TEXT PRIMARY KEY, value BLOB);
+            INSERT INTO ItemTable VALUES ('glass.lastSignedInAuthId', 'account-1'),
+                ('cloudAgentRepository.agents.account-1', '[{"bcId":"\(agent)","workflowStatus":1,"status":1}]');
+            """)
+        createFixtureDatabase(at: storage.appendingPathComponent("conversation-search.db"), sql: """
+            CREATE TABLE conversations (id TEXT, source TEXT, updated_at INTEGER, fts_rowid INTEGER, is_archived INTEGER);
+            CREATE TABLE conversation_fts (body TEXT);
+            INSERT INTO conversation_fts (rowid, body) VALUES (1, '\(transcript)');
+            INSERT INTO conversations VALUES ('\(agent)', 'cloud-cache', \(cachedAt), 1, 0);
+            """)
+
+        func chat(_ status: SessionStatus, lastActivity: Int64) -> Session {
+            Session(id: "cursor:" + agent, source: .cursor, title: "Harbor", status: status, updatedAt: now,
+                    route: .url("cursor://anysphere.cursor-deeplink/background-agent?bcId=" + agent),
+                    activityID: String(lastActivity))
+        }
+        let reader = SessionEvidenceReader(home: home, codexHome: home)
+        let behind = reader.read(chat(.working, lastActivity: cachedAt + 120_000), includeTranscript: true)
+        precondition(behind.latestRequest?.contains("welcome email") == true
+                     && behind.activityContext?.contains("the body comes next") == true
+                     && behind.activityContext?.contains("Earlier cached") != true && behind.latestOutcome == nil,
+                     "A running cloud chat whose copy is behind should still name its newest request, got \(behind)")
+        let finishedBehind = reader.read(chat(.ready, lastActivity: cachedAt + 120_000), includeTranscript: true)
+        precondition(finishedBehind.latestRequest == nil && finishedBehind.latestOutcome == nil,
+                     "A copy that is behind cannot say what came of a finished run")
+        let finishedCurrent = reader.read(chat(.ready, lastActivity: cachedAt), includeTranscript: true)
+        precondition(finishedCurrent.latestRequest?.contains("welcome email") == true
+                     && finishedCurrent.latestOutcome?.contains("subject lines are drafted") == true,
+                     "A copy that has caught up should give the request and the final reply")
     }
 
     private static func createFixtureDatabase(at url: URL, sql: String) {

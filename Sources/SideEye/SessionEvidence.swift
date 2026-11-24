@@ -314,15 +314,19 @@ struct SessionEvidenceReader: Sendable {
                 let pair = Self.cursorCloudMessages(body)
                 let expected = session.activityID.flatMap(Int64.init)
                     ?? Int64(session.updatedAt.timeIntervalSince1970 * 1_000)
-                if cachedAt >= expected - 15_000 {
-                    evidence.latestRequest = pair.request
-                    if session.status == .working, let response = pair.response {
+                // Cursor's copy of a cloud chat trails the cloud, often by more than a few seconds. During a
+                // run the newest request in it is still the one being worked on in nearly every case, so it
+                // stands as the request; right after a follow-up it can be one message behind until the copy
+                // catches up. Once the run has ended, only a copy that has caught up can say what came of it,
+                // and until then Cursor's own report of the run is all there is to go on.
+                let caughtUp = cachedAt >= expected - 15_000
+                if caughtUp || session.status == .working { evidence.latestRequest = pair.request }
+                if session.status == .working {
+                    if let response = pair.response {
                         context.append("Cursor’s latest progress message: " + String(response.prefix(500)))
-                    } else {
-                        evidence.latestOutcome = pair.response
                     }
-                } else if let earlier = pair.request ?? pair.response {
-                    context.append("Earlier cached cloud context only: " + String(earlier.prefix(450)))
+                } else if caughtUp {
+                    evidence.latestOutcome = pair.response
                 }
             }
         }
