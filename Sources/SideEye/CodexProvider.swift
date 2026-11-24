@@ -57,12 +57,8 @@ final class CodexProvider: @unchecked Sendable {
     }
 
     private func readSessions(state: URL, now: Date, includeAutomationRuns: Bool) -> [Session]? {
-        var database: OpaquePointer?
-        let result = sqlite3_open_v2(
-            state.path, &database, SQLITE_OPEN_READONLY | SQLITE_OPEN_URI | SQLITE_OPEN_NOMUTEX, nil
-        )
+        guard let database = ReadOnlySQLite.open(state) else { return nil }
         defer { sqlite3_close(database) }
-        guard result == SQLITE_OK, let database else { return nil }
         sqlite3_busy_timeout(database, 30)
         sqlite3_exec(database, "PRAGMA query_only = ON", nil, nil, nil)
 
@@ -269,7 +265,7 @@ final class CodexProvider: @unchecked Sendable {
         guard sqlite3_prepare_v2(database, "ATTACH DATABASE ? AS " + schema, -1, &statement, nil) == SQLITE_OK else {
             return false
         }
-        let path = url.absoluteString + "?mode=ro"
+        let path = ReadOnlySQLite.address(of: url)
         return path.withCString { bytes in
             sqlite3_bind_text(statement, 1, bytes, -1, nil) == SQLITE_OK &&
                 sqlite3_step(statement) == SQLITE_DONE

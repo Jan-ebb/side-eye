@@ -514,10 +514,8 @@ struct SessionEvidenceReader: Sendable {
 
     private static func query(_ url: URL, _ sql: String, _ arguments: [String], columns: Int) -> [String?] {
         let empty = Array<String?>(repeating: nil, count: columns)
-        var database: OpaquePointer?
+        guard let database = ReadOnlySQLite.open(url) else { return empty }
         defer { sqlite3_close(database) }
-        guard sqlite3_open_v2(url.path, &database, SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX, nil) == SQLITE_OK,
-              let database else { return empty }
         sqlite3_busy_timeout(database, 35)
         var statement: OpaquePointer?
         defer { sqlite3_finalize(statement) }

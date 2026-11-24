@@ -112,6 +112,7 @@ enum SelfChecks {
         checkPalette(now: now)
         checkGrokWorking(now: now)
         checkLegacyMigration()
+        checkClosedCodexDatabases(now: now)
 
         let ordered = SessionStore(defaults: nil)
         let older = sample("older", .codex, "Older completion", .ready, now,
@@ -293,6 +294,54 @@ enum SelfChecks {
         store.setShowsAutomationRuns(false)
         precondition(store.attentionCount == 2 && manualIDs.contains(store.selectedID ?? "") && alerts.isEmpty,
                      "Disabling automation runs must remove visible rows and reconcile selection immediately")
+    }
+
+    /// Codex removes a database's "-wal" and "-shm" files when it closes it, which it does to its turn
+    /// history whenever it goes quiet. Its chats must keep their status then.
+    private static func checkClosedCodexDatabases(now: Date) {
+        let files = FileManager.default
+        let home = files.temporaryDirectory.appendingPathComponent("side-eye-codex-closed-" + UUID().uuidString, isDirectory: true)
+        try! files.createDirectory(at: home, withIntermediateDirectories: true)
+        defer { try? files.removeItem(at: home) }
+
+        let finished = "00000000-0000-4000-8000-000000000011"
+        let stopped = "00000000-0000-4000-8000-000000000012"
+        let seconds = Int64(now.timeIntervalSince1970)
+        let state = home.appendingPathComponent("state_5.sqlite")
+        let history = home.appendingPathComponent("thread_history_1.sqlite")
+        createFixtureDatabase(at: state, sql: """
+            PRAGMA journal_mode = WAL;
+            CREATE TABLE threads (
+                id TEXT PRIMARY KEY, source TEXT, title TEXT, cwd TEXT, updated_at INTEGER,
+                archived INTEGER, thread_source TEXT, recency_at_ms INTEGER,
+                attached_thread_parent_id TEXT, preview TEXT
+            );
+            INSERT INTO threads VALUES
+                ('\(finished)', 'vscode', 'Tidy the changelog', '/tmp', \(seconds), 0, 'user', \(seconds * 1000), NULL, 'Tidy'),
+                ('\(stopped)', 'vscode', 'Rename the helpers', '/tmp', \(seconds), 0, 'user', \(seconds * 1000), NULL, 'Rename');
+            PRAGMA wal_checkpoint(TRUNCATE);
+            """)
+        createFixtureDatabase(at: history, sql: """
+            PRAGMA journal_mode = WAL;
+            CREATE TABLE thread_turns (
+                thread_id TEXT, turn_id TEXT, rollout_ordinal INTEGER, status TEXT, started_at INTEGER,
+                completed_at INTEGER, first_user_item_id TEXT, PRIMARY KEY (thread_id, turn_id)
+            );
+            INSERT INTO thread_turns VALUES
+                ('\(finished)', 'turn', 1, 'completed', \(seconds - 90), \(seconds - 60), 'first'),
+                ('\(stopped)', 'turn', 1, 'interrupted', \(seconds - 90), \(seconds - 80), 'first');
+            PRAGMA wal_checkpoint(TRUNCATE);
+            """)
+        for database in [state, history] {
+            for suffix in ["-wal", "-shm"] { try? files.removeItem(atPath: database.path + suffix) }
+        }
+
+        let statuses = Dictionary(uniqueKeysWithValues: CodexProvider(home: home).scan().map { ($0.id, $0.status) })
+        precondition(statuses == ["codex:" + finished: .ready, "codex:" + stopped: .idle],
+                     "Chats in a Codex that has closed its databases should keep their status, got \(statuses)")
+        precondition(!files.fileExists(atPath: history.path + "-wal") && !files.fileExists(atPath: history.path + "-shm")
+                     && !files.fileExists(atPath: state.path + "-wal"),
+                     "Reading a closed database must not create files beside it")
     }
 
     private static func createFixtureDatabase(at url: URL, sql: String) {
