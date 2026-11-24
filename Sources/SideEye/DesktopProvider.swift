@@ -482,12 +482,7 @@ private final class ReadOnlyDatabase {
     private let handle: OpaquePointer
 
     init?(_ url: URL) {
-        var database: OpaquePointer?
-        guard sqlite3_open_v2(url.path, &database, SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX, nil) == SQLITE_OK,
-              let database else {
-            sqlite3_close(database)
-            return nil
-        }
+        guard let database = ReadOnlySQLite.open(url) else { return nil }
         handle = database
         sqlite3_busy_timeout(database, 60)
     }
