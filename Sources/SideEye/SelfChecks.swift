@@ -827,7 +827,7 @@ enum SelfChecks {
 
     private static func checkArchiveReturns(now: Date) {
         let store = SessionStore(defaults: nil)
-        let project = sample("cursor:bc-project", .cursor, "Personal website", .ready, now,
+        let project = sample("cursor:bc-project", .cursor, "Docs site", .ready, now,
                              completedAt: now.addingTimeInterval(-600))
         let quiet = sample("quiet", .codex, "Quiet chat", .idle, now)
         store.ingest([project, quiet], now: now)
