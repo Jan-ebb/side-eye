@@ -2,6 +2,16 @@ import AppKit
 import Combine
 import ServiceManagement
 
+/// Where the summary model stands: not on this Mac, on its way, being checked, usable, or failed with
+/// a sentence to show.
+enum SummaryModelState: Equatable {
+    case missing
+    case downloading(received: Int64, total: Int64)
+    case checking
+    case ready
+    case failed(String)
+}
+
 @MainActor
 final class PreferencesModel: ObservableObject {
     enum Action {
@@ -31,6 +41,10 @@ final class PreferencesModel: ObservableObject {
         }
     }
     @Published private(set) var launchAtLogin = false
+    /// Where the summary model stands on this Mac.
+    @Published private(set) var summaryModel: SummaryModelState = .missing
+    /// Whether llama.cpp, the program that runs the model, is installed.
+    @Published private(set) var hasSummaryServer = false
     @Published private(set) var sourceEnabled: [Source: Bool]
     /// Whether each app has left any data on this Mac for Side Eye to read.
     @Published private(set) var sourcePresent: [Source: Bool] = [:]
@@ -44,6 +58,9 @@ final class PreferencesModel: ObservableObject {
 
     private let defaults: UserDefaults?
     private let store: SessionStore
+    private var modelDownload: SummaryModelDownload?
+    /// The model Settings offers. Checks point this at a small file on disk.
+    var summaryModelFile = SummaryModel.pinned
 
     init(store: SessionStore, defaults: UserDefaults? = .standard) {
         self.store = store
@@ -61,6 +78,59 @@ final class PreferencesModel: ObservableObject {
         hasMultipleDisplays = NSScreen.screens.count > 1
         sourcePresent = Dictionary(uniqueKeysWithValues: Source.allCases.map { ($0, $0.hasLocalData) })
         sourceEnabled = Dictionary(uniqueKeysWithValues: Source.allCases.map { ($0, $0.isEnabled(in: defaults)) })
+        hasSummaryServer = LocalSummaryEngine.hasServer
+        // A download in progress, or one that just failed, keeps saying so.
+        if summaryModel == .missing || summaryModel == .ready {
+            summaryModel = summaryModelFile.installed == nil ? .missing : .ready
+        }
+    }
+
+    var canRemoveSummaryModel: Bool { summaryModelFile.isRemovable }
+
+    /// Fetches the model. Only ever called from a button that names the download and its size.
+    func downloadSummaryModel() {
+        switch summaryModel {
+        case .missing, .failed: break
+        case .downloading, .checking, .ready: return
+        }
+        // One that broke off is kept, so it continues from where it stopped.
+        let download = modelDownload ?? SummaryModelDownload(summaryModelFile) { [weak self] event in
+            Task { @MainActor in self?.receive(event) }
+        }
+        modelDownload = download
+        summaryModel = .downloading(received: 0, total: summaryModelFile.byteCount)
+        download.start()
+    }
+
+    func cancelSummaryModelDownload() {
+        modelDownload?.cancel()
+        modelDownload = nil
+        summaryModel = summaryModelFile.installed == nil ? .missing : .ready
+    }
+
+    func removeSummaryModel() {
+        guard canRemoveSummaryModel else { return }
+        localPreviewsEnabled = false
+        try? FileManager.default.removeItem(at: summaryModelFile.downloaded)
+        summaryModel = summaryModelFile.installed == nil ? .missing : .ready
+    }
+
+    private func receive(_ event: SummaryModelDownload.Event) {
+        // An event that was already on its way when the download was cancelled changes nothing.
+        guard modelDownload != nil else { return }
+        switch event {
+        case .progress(let received, let total):
+            if case .downloading = summaryModel { summaryModel = .downloading(received: received, total: total) }
+        case .checking:
+            summaryModel = .checking
+        case .finished:
+            modelDownload = nil
+            summaryModel = .ready
+            // Asking for the model is asking for summaries, so they start without a second switch.
+            if localPreviewsEnabled { refreshSources() } else { localPreviewsEnabled = true }
+        case .failed(let message):
+            summaryModel = .failed(message)
+        }
     }
 
     func setLaunchAtLogin(_ enabled: Bool) {

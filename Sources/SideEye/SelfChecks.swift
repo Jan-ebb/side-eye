@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 import SQLite3
 
 @MainActor
@@ -115,6 +116,7 @@ enum SelfChecks {
         checkClosedCodexDatabases(now: now)
         checkDetailLines(now: now)
         checkOpenAtLogin()
+        checkSummaryModelDownload()
 
         let ordered = SessionStore(defaults: nil)
         let older = sample("older", .codex, "Older completion", .ready, now,
@@ -356,6 +358,69 @@ enum SelfChecks {
                      "A download macOS runs from a temporary copy should not register that copy")
         precondition(!PreferencesModel.canOpenAtLogin(from: "/Users/sam/side-eye/.build/debug"),
                      "A development build has no app to open at login")
+    }
+
+    /// A downloaded model is kept only if it is byte for byte the expected file, and getting one turns
+    /// summaries on. This fetches a small made-up file from disk, so the check needs no network.
+    private static func checkSummaryModelDownload() {
+        let files = FileManager.default
+        let folder = files.temporaryDirectory.appendingPathComponent("side-eye-model-" + UUID().uuidString, isDirectory: true)
+        try! files.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? files.removeItem(at: folder) }
+
+        let source = folder.appendingPathComponent("source.bin")
+        let bytes = Data((0..<300_000).map { UInt8(truncatingIfNeeded: $0 &* 31) })
+        try! bytes.write(to: source)
+        let checksum = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+        var file = SummaryModel(source: source, sha256: checksum, byteCount: Int64(bytes.count),
+                                downloaded: folder.appendingPathComponent("Models/model.gguf"), bundled: nil)
+        var wrong = file
+        wrong.sha256 = String(repeating: "0", count: 64)
+        var short = file
+        short.byteCount -= 1
+        precondition(file.matches(source) && !wrong.matches(source) && !short.matches(source),
+                     "Only a file with the expected size and checksum is the model")
+        file.sha256 = checksum.uppercased()
+        precondition(file.matches(source) && file.installed == nil && !file.isRemovable)
+        precondition(SummaryModel.pinned.sizeText == "1.1 GB" && SummaryModel.sizeText(412_300_000) == "412 MB")
+        precondition(SummaryModel.pinned.source.scheme == "https" && SummaryModel.pinned.sha256.count == 64)
+
+        /// Lets the download's events, which arrive on the main actor, through while this check waits.
+        func wait(for settings: PreferencesModel, until done: (SummaryModelState) -> Bool) {
+            let deadline = Date().addingTimeInterval(20)
+            while !done(settings.summaryModel), Date() < deadline {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+            }
+            precondition(done(settings.summaryModel), "The download never ended: \(settings.summaryModel)")
+        }
+
+        let settings = PreferencesModel(store: SessionStore(defaults: nil), defaults: nil)
+        settings.summaryModelFile = wrong
+        settings.refreshSystemState()
+        precondition(settings.summaryModel == .missing && !settings.localPreviewsEnabled)
+        settings.downloadSummaryModel()
+        wait(for: settings) { if case .failed = $0 { return true } else { return false } }
+        precondition(!files.fileExists(atPath: wrong.downloaded.path)
+                     && !files.fileExists(atPath: wrong.downloaded.appendingPathExtension("download").path),
+                     "A download that fails the check should leave nothing behind")
+        precondition(!settings.localPreviewsEnabled, "A refused download must not turn summaries on")
+        settings.refreshSystemState()
+        guard case .failed = settings.summaryModel else { preconditionFailure("A failure should stay on screen") }
+        settings.downloadSummaryModel()
+        guard case .downloading = settings.summaryModel else { preconditionFailure("Try Again should start over") }
+        wait(for: settings) { if case .failed = $0 { return true } else { return false } }
+        settings.cancelSummaryModelDownload()
+        precondition(settings.summaryModel == .missing)
+
+        settings.summaryModelFile = file
+        settings.downloadSummaryModel()
+        guard case .downloading = settings.summaryModel else { preconditionFailure("Download should start at once") }
+        wait(for: settings) { $0 == .ready }
+        precondition(file.matches(file.downloaded) && file.installed == file.downloaded && settings.canRemoveSummaryModel)
+        precondition(settings.localPreviewsEnabled, "Getting the model should turn summaries on")
+        settings.removeSummaryModel()
+        precondition(settings.summaryModel == .missing && !settings.localPreviewsEnabled
+                     && !files.fileExists(atPath: file.downloaded.path), "Removing the model turns summaries off")
     }
 
     /// A detail line has to say more than the chat's title does. And a Cursor cloud chat whose copy on

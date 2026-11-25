@@ -4,36 +4,31 @@ import NaturalLanguage
 
 /// A warm, app-owned model worker. Conversation data travels over a private Unix socket.
 actor LocalSummaryEngine {
-    static let modelFileName = "SideEyeSummary"
     private static let maximumSummaryLength = 135
     private static let idleSeconds: Double = 45
-    /// llama.cpp's server, where Homebrew puts it on Apple silicon or on Intel.
-    private static let serverURL = ["/opt/homebrew/bin/llama-server", "/usr/local/bin/llama-server"]
-        .map { URL(fileURLWithPath: $0) }
-        .first { FileManager.default.isExecutableFile(atPath: $0.path) }
-        ?? URL(fileURLWithPath: "/opt/homebrew/bin/llama-server")
-    private let modelURL: URL?
-    private let serverURL: URL
+    /// llama.cpp's server, where Homebrew puts it on Apple silicon or on Intel. Looked up each time, so
+    /// installing it while Side Eye runs is enough.
+    private static var serverURL: URL {
+        ["/opt/homebrew/bin/llama-server", "/usr/local/bin/llama-server"]
+            .map { URL(fileURLWithPath: $0) }
+            .first { FileManager.default.isExecutableFile(atPath: $0.path) }
+            ?? URL(fileURLWithPath: "/opt/homebrew/bin/llama-server")
+    }
     private let workerSlot = WorkerSlot()
     private var idleTask: Task<Void, Never>?
     private var activeRequests = 0
     private var unavailableUntil = Date.distantPast
 
-    init(modelURL: URL? = Bundle.main.url(forResource: LocalSummaryEngine.modelFileName,
-                                         withExtension: "gguf", subdirectory: "Models"),
-         serverURL: URL = LocalSummaryEngine.serverURL) {
-        self.modelURL = modelURL
-        self.serverURL = serverURL
-    }
+    /// Whether the program that runs the model is on this Mac.
+    nonisolated static var hasServer: Bool { FileManager.default.isExecutableFile(atPath: serverURL.path) }
 
-    nonisolated static var isInstalled: Bool {
-        let model = Bundle.main.url(forResource: modelFileName, withExtension: "gguf", subdirectory: "Models")
-        return model != nil && FileManager.default.isExecutableFile(atPath: serverURL.path)
-    }
+    nonisolated static var isInstalled: Bool { SummaryModel.pinned.installed != nil && hasServer }
 
     func summarize(status: SessionStatus, title: String, evidence: SessionEvidence) async -> String? {
+        // Both are looked up on every call: the model can arrive, or be removed, while Side Eye runs.
+        let serverURL = Self.serverURL
         guard !Task.isCancelled, Date() >= unavailableUntil,
-              let modelURL, FileManager.default.isReadableFile(atPath: modelURL.path),
+              let modelURL = SummaryModel.pinned.installed,
               FileManager.default.isExecutableFile(atPath: serverURL.path),
               let input = Self.input(status: status, title: title, evidence: evidence) else { return nil }
 

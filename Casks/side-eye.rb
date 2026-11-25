@@ -12,6 +12,7 @@ cask "side-eye" do
   app "Side Eye.app"
 
   zap trash: [
+    "~/Library/Application Support/Side Eye",
     "~/Library/Preferences/io.github.jan-ebb.side-eye.plist",
   ]
 
