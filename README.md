@@ -6,7 +6,15 @@ Side Eye is a macOS menu bar app that puts your agent chats from Codex, Claude C
 
 ## Install
 
-Side Eye needs macOS 14 or later and runs on Apple silicon and Intel.
+Side Eye needs macOS 14 or later and runs on Apple silicon and Intel. Paste this into Terminal:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Jan-ebb/side-eye/main/install.sh | bash
+```
+
+It downloads the newest release, checks it against the SHA-256 published with it, puts Side Eye.app in Applications and opens it. Run it again to update. [The script](install.sh) is short if you want to read it first.
+
+### Other ways to install
 
 With Homebrew:
 
@@ -17,7 +25,7 @@ brew install --cask side-eye
 
 Or download `SideEye-x.y.z.zip` from [Releases](https://github.com/Jan-ebb/side-eye/releases), unzip it and move Side Eye.app to Applications.
 
-Side Eye is not yet notarized by Apple, so macOS blocks it the first time you open it, whether it came from Homebrew or from the download. Open it once and close the warning. Then go to **System Settings → Privacy & Security**, scroll down to the line about Side Eye and click **Open Anyway**. You do this once after installing and once after each update. On macOS 14 you can Control-click Side Eye.app and choose **Open** instead.
+Side Eye is not notarized by Apple, so macOS blocks a copy from Homebrew or from a browser download the first time you open it. The install command above avoids that, because a file fetched with `curl` carries no download warning. For a blocked copy, open it once and close the warning. Then go to **System Settings → Privacy & Security**, scroll down to the line about Side Eye and click **Open Anyway**. You do this once after installing and once after each update. On macOS 14 you can Control-click Side Eye.app and choose **Open** instead.
 
 If you prefer Terminal, this clears the block in one step:
 
