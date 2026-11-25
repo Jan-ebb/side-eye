@@ -42,12 +42,13 @@ Side Eye has no Dock icon. It lives in the menu bar and as a small pill on the r
 - Hover the pill, or press ⌃⌥Space from any app, to open the sidebar.
 - Side Eye opens at login from its first launch, so it is back after a restart. Untick **Open Side Eye at login** in the welcome window, or turn off **Open at login** in Settings, to stop that.
 - Side Eye needs no permissions to start. Opening a Claude Code chat that runs in a terminal asks for Automation access once, so Side Eye can switch to the right tab.
+- Summaries are optional. If llama.cpp is installed, the welcome window and **Settings → Summaries** offer to download the model, 1.1 GB, once.
 - If the Inbox is empty, it says why: no supported app was found, or none has a chat yet.
 - **Settings → Apps** shows how many chats the last scan found for each app.
 
 ## Privacy
 
-Side Eye reads each app’s local files on your Mac to list its chats. It sends nothing anywhere: it makes no network requests, has no account and collects no analytics. Optional summaries run on a local model through a private socket on your Mac.
+Side Eye reads each app’s local files on your Mac to list its chats. It sends nothing anywhere: it has no account and collects no analytics. The only time it goes online is to download the summary model, and only when you press **Download**. Summaries then run on that model on your Mac through a private socket, so no chat text leaves it.
 
 ## Using Side Eye
 
@@ -124,7 +125,7 @@ To check a build, run:
 
 The diagnostics report counts, route availability, and the number of summaries generated locally. Run the UI check with the main app closed so it can register the same shortcuts. Add `--pointer-check` to test the real global shortcut and pointer hover, which briefly moves the pointer.
 
-Summaries are optional and off in the release download, which does not include a model. For a build with them, install llama.cpp (`brew install llama.cpp`) and set `SIDE_EYE_SUMMARY_MODEL` to the verified GGUF file in [the model notes](ModelLicenses/SideEyeSummary.md) when running the packaging script. Side Eye starts `llama-server` on demand and talks to it over a private Unix socket. Without a model, Settings says summaries are unavailable.
+Summaries are optional. The release download has no model inside. Press **Download** under **Settings → Summaries** and Side Eye fetches the pinned weights named in [the model notes](ModelLicenses/SideEyeSummary.md), 1.1 GB from Hugging Face, checks them against the SHA-256 given there and keeps them in `~/Library/Application Support/Side Eye/Models`. A file that fails the check is deleted, and Settings can remove the model again. Running it also needs llama.cpp (`brew install llama.cpp`): Side Eye starts its `llama-server` on demand and talks to it over a private Unix socket. To build a copy with the model inside instead, set `SIDE_EYE_SUMMARY_MODEL` to the verified GGUF file when running the packaging script.
 
 [Linear’s design refresh](https://linear.app/now/behind-the-latest-design-refresh), [Mobbin’s navigation references](https://mobbin.com/blog/how-to-use-mobbin-mcp), and the [Wispr Flow edge bar](https://docs.wisprflow.ai/articles/1790396454-move-and-dock-the-flow-bar-on-desktop) informed the overlay. [Codex deep links](https://learn.chatgpt.com/docs/reference/commands#deep-links) and the [Claude Code agent view](https://code.claude.com/docs/en/agent-view#read-session-state-from-a-script) document the underlying entry points.
 

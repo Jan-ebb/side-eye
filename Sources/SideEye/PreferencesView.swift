@@ -62,6 +62,10 @@ struct PreferencesView: View {
         }
         .frame(minWidth: 420, minHeight: 360)
         .background(Color(nsColor: .windowBackgroundColor))
+        // Coming back from Terminal or System Settings, the window shows what changed there.
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            model.refreshSystemState()
+        }
     }
 
     // MARK: General
@@ -88,11 +92,7 @@ struct PreferencesView: View {
                 }
             }
             SettingsGroup(title: "Summaries") {
-                settingToggle("Summarize recent chat text",
-                              detail: LocalSummaryEngine.isInstalled
-                                  ? "See what changed and what’s next. Chat text stays on this Mac."
-                                  : "Needs a local model and llama.cpp, which this copy of Side Eye doesn’t have. The README says how to add them.",
-                              enabled: LocalSummaryEngine.isInstalled, value: $model.localPreviewsEnabled)
+                SummaryRows(model: model, offersRemoval: true)
             }
             if store.hiddenCount > 0 {
                 SettingsGroup(title: "Archive") {
@@ -552,6 +552,99 @@ struct SettingsLabel: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+        }
+    }
+}
+
+/// The rows that offer, fetch and switch summaries. Settings and the welcome window show the same ones.
+/// Nothing is downloaded until someone presses Download, which names the size next to it.
+struct SummaryRows: View {
+    @ObservedObject var model: PreferencesModel
+    /// Settings also offers to delete a downloaded model again.
+    var offersRemoval = false
+    @State private var copied = false
+
+    private static let title = "Summarize recent chat text"
+    private static let benefit = "See what changed and what’s next."
+    private static let installCommand = "brew install llama.cpp"
+
+    private var size: String { model.summaryModelFile.sizeText }
+
+    var body: some View {
+        if !model.hasSummaryServer {
+            row(detail: "Summaries are written on this Mac by llama.cpp, which isn’t installed. "
+                + "In Terminal, run “\(Self.installCommand)”, then come back here.") {
+                Button(copied ? "Copied" : "Copy Command") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(Self.installCommand, forType: .string)
+                    copied = true
+                }
+            }
+        } else {
+            switch model.summaryModel {
+            case .ready:
+                SettingsRow {
+                    SettingsLabel(title: Self.title, detail: "\(Self.benefit) Chat text stays on this Mac.")
+                        .accessibilityHidden(true)
+                } control: {
+                    Toggle(Self.title, isOn: $model.localPreviewsEnabled)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                        .accessibilityLabel(Self.title)
+                }
+                if offersRemoval && model.canRemoveSummaryModel {
+                    SettingsDivider()
+                    SettingsRow(compact: true) {
+                        SettingsLabel(title: "Model on this Mac")
+                    } control: {
+                        HStack(spacing: 10) {
+                            Text(size)
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                            Button("Remove", action: model.removeSummaryModel)
+                                .controlSize(.small)
+                        }
+                    }
+                }
+            case .missing:
+                // The button names the size. Two lines at most, so the welcome window needs no scrolling.
+                row(detail: "\(Self.benefit) Downloads a model once. Chat text stays on this Mac.") {
+                    Button("Download \(size)", action: model.downloadSummaryModel)
+                }
+            case .downloading(let received, let total):
+                SettingsRow {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(Self.title).font(.system(size: 13))
+                        ProgressView(value: Double(min(received, total)), total: Double(max(total, 1)))
+                            .progressViewStyle(.linear)
+                            .controlSize(.small)
+                            .accessibilityLabel("Model download")
+                        Text("Downloading the model: \(SummaryModel.sizeText(received)) of \(SummaryModel.sizeText(total)).")
+                            .font(.system(size: 11).monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                } control: {
+                    Button("Cancel", action: model.cancelSummaryModelDownload)
+                        .controlSize(.small)
+                }
+            case .checking:
+                row(detail: "Checking the download…") {
+                    ProgressView().controlSize(.small)
+                }
+            case .failed(let message):
+                row(detail: message) {
+                    Button("Try Again", action: model.downloadSummaryModel)
+                }
+            }
+        }
+    }
+
+    private func row<Control: View>(detail: String, @ViewBuilder control: () -> Control) -> some View {
+        SettingsRow {
+            SettingsLabel(title: Self.title, detail: detail)
+        } control: {
+            control().controlSize(.small)
         }
     }
 }

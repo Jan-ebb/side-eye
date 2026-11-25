@@ -9,8 +9,11 @@ struct WelcomeView: View {
     let done: () -> Void
     @Environment(\.colorScheme) private var scheme
 
-    /// Tall enough to show everything at once: a welcome nobody has to scroll.
-    static let windowSize = CGSize(width: 480, height: 690)
+    /// Tall enough to show everything at once: a welcome nobody has to scroll. The offer of summaries
+    /// adds a group, shown only where summaries can run.
+    static func windowSize(offersSummaries: Bool) -> CGSize {
+        CGSize(width: 480, height: offersSummaries ? 800 : 690)
+    }
     private static let apps: [Source] = [.codex, .claude, .cursor, .grok]
 
     var body: some View {
@@ -28,6 +31,9 @@ struct WelcomeView: View {
                     SettingsGroup(title: "Open Side Eye") { openRows }
                     SettingsGroup(title: "What the list tells you") { statusRows }
                     SettingsGroup(title: "Keys worth knowing") { keyRows }
+                    if model.hasSummaryServer {
+                        SettingsGroup(title: "Summaries, if you want them") { SummaryRows(model: model) }
+                    }
                 }
                 .padding(.horizontal, 28)
                 .padding(.top, 24)
@@ -136,13 +142,15 @@ struct WelcomeView: View {
     }
 
     private var keyRows: some View {
-        let keys = [("↵", "Open"), ("E", "Archive"), ("L", "Later"), ("/", "Search"), ("⌘K", "All commands")]
+        let keys = [("↵", "Open"), ("E", "Archive"), ("L", "Later"), ("D", "Previews"), ("/", "Search"),
+                    ("⌘K", "All commands")]
         let column = GridItem(.flexible(), alignment: .leading)
         return LazyVGrid(columns: [column, column, column], alignment: .leading, spacing: 9) {
             ForEach(keys, id: \.0) { key, label in
                 HStack(spacing: 7) {
                     ShortcutKeycap(text: key)
-                    Text(label).font(.system(size: 13)).lineLimit(1)
+                    // Shrinks a little before it would cut a word off, as when a scroll bar takes some width.
+                    Text(label).font(.system(size: 13)).lineLimit(1).minimumScaleFactor(0.85)
                 }
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("\(label), \(key)")

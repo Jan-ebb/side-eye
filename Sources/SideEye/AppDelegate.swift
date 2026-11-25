@@ -162,7 +162,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func showWelcome() {
         preferences.refreshSystemState()
         if welcomeWindow == nil {
-            let size = WelcomeView.windowSize
+            var size = WelcomeView.windowSize(offersSummaries: preferences.hasSummaryServer)
+            // On a short screen the window stays on it and its content scrolls.
+            if let visible = NSScreen.main?.visibleFrame.height { size.height = min(size.height, visible - 60) }
             let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.titled, .closable],
                                   backing: .buffered, defer: false)
             window.title = "Welcome to Side Eye"
