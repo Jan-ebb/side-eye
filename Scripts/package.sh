@@ -3,7 +3,6 @@ set -euo pipefail
 
 # Builds Side Eye.app. Environment:
 #   SIDE_EYE_UNIVERSAL=1        build for Apple silicon and Intel (default: this Mac's architecture)
-#   SIDE_EYE_SIGN_IDENTITY      a Developer ID to sign with (default: ad-hoc, which other Macs will block)
 #   SIDE_EYE_BUNDLE_ID          the app identifier (default: io.github.jan-ebb.side-eye)
 #   SIDE_EYE_SUMMARY_MODEL      path to the summary model to bundle (default: none)
 #   SIDE_EYE_LLAMA_SERVER       path to a self-contained llama-server to put inside, so summaries need
@@ -13,7 +12,6 @@ destination="${1:-$project/Side Eye.app}"
 version="$(tr -d '[:space:]' < "$project/VERSION")"
 build="$(git -C "$project" rev-list --count HEAD 2>/dev/null || echo 1)"
 bundle_id="${SIDE_EYE_BUNDLE_ID:-io.github.jan-ebb.side-eye}"
-identity="${SIDE_EYE_SIGN_IDENTITY:--}"
 arch_flags=()
 if [[ "${SIDE_EYE_UNIVERSAL:-0}" == 1 ]]; then arch_flags=(--arch arm64 --arch x86_64); fi
 if [[ "$destination" != /* ]]; then destination="$PWD/$destination"; fi
@@ -79,17 +77,12 @@ cat > "$app/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 /usr/bin/plutil -lint "$app/Contents/Info.plist"
-sign() {
-  if [[ "$identity" == "-" ]]; then
-    /usr/bin/codesign --force --sign - "$1"
-  else
-    # A Developer ID signature needs the hardened runtime and a timestamp to pass notarization.
-    /usr/bin/codesign --force --options runtime --timestamp --sign "$identity" "$1"
-  fi
-}
-# A program inside the app is signed before the app that contains it.
-if [[ -e "$app/Contents/Helpers/llama-server" ]]; then sign "$app/Contents/Helpers/llama-server"; fi
-sign "$app"
+# Signed ad-hoc, which needs no certificate: Apple silicon runs nothing that is unsigned. A program
+# inside the app is signed before the app that contains it.
+if [[ -e "$app/Contents/Helpers/llama-server" ]]; then
+  /usr/bin/codesign --force --sign - "$app/Contents/Helpers/llama-server"
+fi
+/usr/bin/codesign --force --sign - "$app"
 /usr/bin/codesign --verify --strict --deep "$app"
 if [[ -e "$destination" ]]; then rm -rf "$destination"; fi
 mv "$app" "$destination"
