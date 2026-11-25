@@ -82,6 +82,23 @@ final class PreferencesModel: ObservableObject {
         refreshSystemState()
     }
 
+    /// Turns "Open at login" on for someone running Side Eye for the first time, so it is back after a
+    /// restart without them having to find the setting. Unlike the switch it never opens System Settings.
+    func openAtLoginForNewUser() {
+        guard Self.canOpenAtLogin(from: Bundle.main.bundlePath) else { return }
+        let service = SMAppService.mainApp
+        try? service.register()
+        if service.status == .requiresApproval { loginItemNotice = "Approve Side Eye in Login Items." }
+        refreshSystemState()
+    }
+
+    /// Only an installed app can be opened at login. macOS runs a download that was never moved out of
+    /// its folder from a temporary copy, whose path is gone by the next login, and a development build is
+    /// a bare program with no app around it.
+    nonisolated static func canOpenAtLogin(from bundlePath: String) -> Bool {
+        bundlePath.hasSuffix(".app") && !bundlePath.contains("/AppTranslocation/")
+    }
+
     func setSource(_ source: Source, enabled: Bool) {
         guard sourceEnabled[source] != enabled else { return }
         sourceEnabled[source] = enabled

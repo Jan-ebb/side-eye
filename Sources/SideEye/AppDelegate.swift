@@ -150,10 +150,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Opens the welcome window once, for someone who has never run Side Eye. Saved history means they have.
+    /// Side Eye also starts opening at login from then on; the welcome window's checkbox shows it and undoes it.
     private func showWelcomeOnFirstRun() {
         guard defaults.object(forKey: "welcomeSeen") == nil else { return }
         defaults.set(true, forKey: "welcomeSeen")
-        if defaults.object(forKey: "sessionHistory") == nil { showWelcome() }
+        guard defaults.object(forKey: "sessionHistory") == nil else { return }
+        preferences.openAtLoginForNewUser()
+        showWelcome()
     }
 
     @objc private func showWelcome() {

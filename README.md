@@ -40,6 +40,7 @@ cd side-eye
 Side Eye has no Dock icon. It lives in the menu bar and as a small pill on the right edge of your screen. The first time you open it, a welcome window shows which apps it found, how to open the sidebar and what its three statuses mean. You can reopen it from the menu bar icon under **Welcome to Side Eye…**.
 
 - Hover the pill, or press ⌃⌥Space from any app, to open the sidebar.
+- Side Eye opens at login from its first launch, so it is back after a restart. Untick **Open Side Eye at login** in the welcome window, or turn off **Open at login** in Settings, to stop that.
 - Side Eye needs no permissions to start. Opening a Claude Code chat that runs in a terminal asks for Automation access once, so Side Eye can switch to the right tab.
 - If the Inbox is empty, it says why: no supported app was found, or none has a chat yet.
 - **Settings → Apps** shows how many chats the last scan found for each app.

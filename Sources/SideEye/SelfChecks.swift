@@ -114,6 +114,7 @@ enum SelfChecks {
         checkLegacyMigration()
         checkClosedCodexDatabases(now: now)
         checkDetailLines(now: now)
+        checkOpenAtLogin()
 
         let ordered = SessionStore(defaults: nil)
         let older = sample("older", .codex, "Older completion", .ready, now,
@@ -343,6 +344,18 @@ enum SelfChecks {
         precondition(!files.fileExists(atPath: history.path + "-wal") && !files.fileExists(atPath: history.path + "-shm")
                      && !files.fileExists(atPath: state.path + "-wal"),
                      "Reading a closed database must not create files beside it")
+    }
+
+    /// First launch turns on "Open at login" only for an installed app, never for a copy macOS will discard.
+    private static func checkOpenAtLogin() {
+        precondition(PreferencesModel.canOpenAtLogin(from: "/Applications/Side Eye.app")
+                     && PreferencesModel.canOpenAtLogin(from: "/Users/sam/Applications/Side Eye.app"),
+                     "An installed app should open at login from its first launch")
+        precondition(!PreferencesModel.canOpenAtLogin(
+            from: "/private/var/folders/ab/cd/T/AppTranslocation/0A1B2C3D/d/Side Eye.app"),
+                     "A download macOS runs from a temporary copy should not register that copy")
+        precondition(!PreferencesModel.canOpenAtLogin(from: "/Users/sam/side-eye/.build/debug"),
+                     "A development build has no app to open at login")
     }
 
     /// A detail line has to say more than the chat's title does. And a Cursor cloud chat whose copy on
