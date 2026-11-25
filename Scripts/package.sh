@@ -6,6 +6,8 @@ set -euo pipefail
 #   SIDE_EYE_SIGN_IDENTITY      a Developer ID to sign with (default: ad-hoc, which other Macs will block)
 #   SIDE_EYE_BUNDLE_ID          the app identifier (default: io.github.jan-ebb.side-eye)
 #   SIDE_EYE_SUMMARY_MODEL      path to the summary model to bundle (default: none)
+#   SIDE_EYE_LLAMA_SERVER       path to a self-contained llama-server to put inside, so summaries need
+#                               no Homebrew (default: none; Scripts/llama-server.sh builds one)
 project="$(cd "$(dirname "$0")/.." && pwd)"
 destination="${1:-$project/Side Eye.app}"
 version="$(tr -d '[:space:]' < "$project/VERSION")"
@@ -48,6 +50,12 @@ if [[ -n "${SIDE_EYE_SUMMARY_MODEL:-}" ]]; then
   /usr/bin/install -m 644 "$project/ModelLicenses/SideEyeSummary.md" "$models/SideEyeSummary.md"
 fi
 
+if [[ -n "${SIDE_EYE_LLAMA_SERVER:-}" ]]; then
+  mkdir -p "$app/Contents/Helpers" "$app/Contents/Resources/Licenses"
+  /usr/bin/install -m 755 "$SIDE_EYE_LLAMA_SERVER" "$app/Contents/Helpers/llama-server"
+  /usr/bin/install -m 644 "$project/ModelLicenses/llama.cpp-LICENSE.txt" "$app/Contents/Resources/Licenses/llama.cpp.txt"
+fi
+
 cat > "$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -71,13 +79,18 @@ cat > "$app/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 /usr/bin/plutil -lint "$app/Contents/Info.plist"
-if [[ "$identity" == "-" ]]; then
-  /usr/bin/codesign --force --sign - "$app"
-else
-  # A Developer ID signature needs the hardened runtime and a timestamp to pass notarization.
-  /usr/bin/codesign --force --options runtime --timestamp --sign "$identity" "$app"
-fi
-/usr/bin/codesign --verify --strict "$app"
+sign() {
+  if [[ "$identity" == "-" ]]; then
+    /usr/bin/codesign --force --sign - "$1"
+  else
+    # A Developer ID signature needs the hardened runtime and a timestamp to pass notarization.
+    /usr/bin/codesign --force --options runtime --timestamp --sign "$identity" "$1"
+  fi
+}
+# A program inside the app is signed before the app that contains it.
+if [[ -e "$app/Contents/Helpers/llama-server" ]]; then sign "$app/Contents/Helpers/llama-server"; fi
+sign "$app"
+/usr/bin/codesign --verify --strict --deep "$app"
 if [[ -e "$destination" ]]; then rm -rf "$destination"; fi
 mv "$app" "$destination"
 echo "$destination"

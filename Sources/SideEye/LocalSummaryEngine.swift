@@ -6,13 +6,18 @@ import NaturalLanguage
 actor LocalSummaryEngine {
     private static let maximumSummaryLength = 135
     private static let idleSeconds: Double = 45
-    /// llama.cpp's server, where Homebrew puts it on Apple silicon or on Intel. Looked up each time, so
-    /// installing it while Side Eye runs is enough.
+    /// Where llama.cpp's server can be, best first: inside this app, as the release download has it,
+    /// then where Homebrew puts it on Apple silicon and on Intel.
+    nonisolated static func serverCandidates(app: URL = Bundle.main.bundleURL) -> [URL] {
+        [app.appending(path: "Contents/Helpers/llama-server"),
+         URL(fileURLWithPath: "/opt/homebrew/bin/llama-server"),
+         URL(fileURLWithPath: "/usr/local/bin/llama-server")]
+    }
+
+    /// Looked up each time, so installing llama.cpp while Side Eye runs is enough.
     private static var serverURL: URL {
-        ["/opt/homebrew/bin/llama-server", "/usr/local/bin/llama-server"]
-            .map { URL(fileURLWithPath: $0) }
-            .first { FileManager.default.isExecutableFile(atPath: $0.path) }
-            ?? URL(fileURLWithPath: "/opt/homebrew/bin/llama-server")
+        let candidates = serverCandidates()
+        return candidates.first { FileManager.default.isExecutableFile(atPath: $0.path) } ?? candidates[1]
     }
     private let workerSlot = WorkerSlot()
     private var idleTask: Task<Void, Never>?

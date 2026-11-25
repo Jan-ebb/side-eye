@@ -1,5 +1,6 @@
 #!/bin/bash
-# Builds the release download: a universal Side Eye.app, zipped, with its checksum.
+# Builds the release download: a universal Side Eye.app, zipped, with its checksum. The app carries
+# llama.cpp's server, built by Scripts/llama-server.sh, which needs cmake.
 #
 #   ./Scripts/release.sh
 #
@@ -17,7 +18,9 @@ zip="$out/SideEye-$version.zip"
 
 rm -rf "$out"
 mkdir -p "$out"
-SIDE_EYE_UNIVERSAL=1 "$project/Scripts/package.sh" "$out/Side Eye.app" > /dev/null
+SIDE_EYE_UNIVERSAL=1 "$project/Scripts/llama-server.sh" "$out/llama-server" > /dev/null
+SIDE_EYE_UNIVERSAL=1 SIDE_EYE_LLAMA_SERVER="$out/llama-server" "$project/Scripts/package.sh" "$out/Side Eye.app" > /dev/null
+rm "$out/llama-server"
 
 archive() { /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$out/Side Eye.app" "$zip"; }
 archive
