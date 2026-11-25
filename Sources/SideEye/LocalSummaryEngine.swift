@@ -395,8 +395,10 @@ actor LocalSummaryEngine {
 
         func stop() { try? lifetime.fileHandleForWriting.close() }
 
+        /// A server that has never run on this Mac spends about 15 seconds before it listens, while macOS
+        /// compiles the model's GPU code. That result is cached, and later starts take under a second.
         func waitUntilReady() -> Bool {
-            let deadline = Date().addingTimeInterval(5)
+            let deadline = Date().addingTimeInterval(40)
             repeat {
                 if !isRunning { return false }
                 if FileManager.default.fileExists(atPath: socket.path),
