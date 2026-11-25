@@ -184,8 +184,8 @@ final class DesktopProvider: @unchecked Sendable {
 
     /// How long a sent message counts as the agent working on it, and how long a progress note does.
     // Grok Bot records no running flag, so Working is read from the end of the transcript. The windows
-    // come from measured turns: a request from you got its first answer within 3 minutes every time and
-    // one from another agent within 15; after a message that looks like progress, more followed in 85%
+    // come from timing the turns in one long Grok Bot history, with room to spare: a request from you got
+    // its first answer within 3 minutes every time, and one from another agent within 15; after a message that looks like progress, more followed in 85%
     // of cases and almost never after 5 silent minutes; after any other message, more followed in 48%
     // of cases, mostly within seconds, and in 16% once 20 seconds had passed.
     static let grokTailWindow: TimeInterval = 30 * 60
@@ -362,7 +362,6 @@ private struct CursorCloudRow: Decodable {
     let createdAt: Int64?
 }
 
-/// The newest message in a Grok Bot transcript.
 /// The newest message in a Grok Bot transcript and how it sits in its turn.
 struct GrokTail: Equatable {
     /// True when the newest message is a request, from you or from another agent.

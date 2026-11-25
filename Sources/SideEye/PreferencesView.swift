@@ -377,11 +377,7 @@ struct PreferencesView: View {
         } control: {
             HStack(spacing: 4) {
                 ForEach(Array(keys.enumerated()), id: \.offset) { _, key in
-                    if key == "or" || key == "to" {
-                        Text(key).font(.system(size: 11)).foregroundStyle(.secondary)
-                    } else {
-                        ShortcutKeycap(text: key)
-                    }
+                    ShortcutKeycap(text: key)
                 }
             }
             .opacity(unavailable ? 0.45 : 1)

@@ -98,7 +98,7 @@ final class SessionStore: ObservableObject {
     @Published private var searchQuery: String?
     @Published private(set) var filter: SessionFilter = .all
     @Published private(set) var showsAllSummaries: Bool
-    /// Favorites, in the order they were added. They stay in their groups in All and have their own tab.
+    /// Favorites, in the order they were added. They stay in their groups in the Inbox and have their own tab.
     @Published private(set) var pinnedIDs: [String]
     @Published private(set) var showsAutomationRuns: Bool
     @Published var numberEntry: String?
@@ -718,7 +718,7 @@ final class SessionStore: ObservableObject {
         return deferSession
     }
 
-    /// Moves a chat to Later until a time, when it comes back to All marked unread.
+    /// Moves a chat to Later until a time, when it comes back to the Inbox marked unread.
     /// A chat already in Later just gets the new time.
     @discardableResult
     func deferSession(_ session: Session, until: Date?) -> Bool {
@@ -985,7 +985,6 @@ final class SessionStore: ObservableObject {
         return attentionFirst(a.session, b.session)
     }
 
-    /// Newest first by the time the row shows. Needs input keeps unseen requests on top.
     /// Newest first, by a moment that reading never changes: when a request arrived, a reply
     /// finished, a turn started or a chat went quiet.
     private func order(within group: SessionGroup) -> (SessionRow, SessionRow) -> Bool {

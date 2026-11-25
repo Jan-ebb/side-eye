@@ -1,6 +1,9 @@
 import AppKit
 import Carbon.HIToolbox
 
+/// Marks the global shortcuts as Side Eye's own. The four characters spell "SIDE".
+private let hotkeySignature: OSType = 0x5349_4445
+
 enum Shortcut: Int, CaseIterable {
     case overlay = 100
     case next
@@ -61,7 +64,7 @@ final class Hotkeys {
             let error = GetEventParameter(event, EventParamName(kEventParamDirectObject),
                                           EventParamType(typeEventHotKeyID), nil,
                                           MemoryLayout<EventHotKeyID>.size, nil, &identifier)
-            guard error == noErr, identifier.signature == 0x52454C59,
+            guard error == noErr, identifier.signature == hotkeySignature,
                   let key = Shortcut(rawValue: Int(identifier.id)) else { return OSStatus(eventNotHandledErr) }
             let receiver = Unmanaged<Hotkeys>.fromOpaque(context).takeUnretainedValue()
             DispatchQueue.main.async { receiver.receive(key) }
@@ -72,7 +75,7 @@ final class Hotkeys {
         let target = GetApplicationEventTarget()
         for shortcut in Shortcut.allCases {
             var ref: EventHotKeyRef?
-            let id = EventHotKeyID(signature: 0x52454C59, id: UInt32(shortcut.rawValue))
+            let id = EventHotKeyID(signature: hotkeySignature, id: UInt32(shortcut.rawValue))
             let error = RegisterEventHotKey(UInt32(shortcut.keyCode), UInt32(controlKey | optionKey), id, target, 0, &ref)
             if error == noErr, let ref { registrations.append(ref) }
             else { unavailable.append(shortcut) }

@@ -169,7 +169,7 @@ enum SelfChecks {
         agents.setGrokRoster([firstAgent])
         agents.setGrokMain(id: firstAgent.id, isMain: true)
         agents.setGrokMainOnly(true)
-        precondition(agents.mainGrokIDs == [firstAgent.id], "The firstAgent roster is the baseline; nothing in it is new")
+        precondition(agents.mainGrokIDs == [firstAgent.id], "The first roster is the baseline; nothing in it is new")
         agents.setGrokRoster([firstAgent, secondAgent])
         precondition(agents.mainGrokIDs == [firstAgent.id, secondAgent.id],
                      "An agent created later should be shown by itself while only main agents are shown")

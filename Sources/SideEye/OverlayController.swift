@@ -485,7 +485,7 @@ final class OverlayController {
         morph.hide()
     }
 
-    /// Shows a short notice in the action bar. An undoable one offers ⌘Z beside it.
+    /// Shows a short notice in the action bar. An undoable one offers Z beside it.
     func report(_ message: String, undoable: Bool = false) {
         store.notice = message
         store.noticeOffersUndo = undoable
@@ -1425,7 +1425,6 @@ final class OverlayController {
 
     private func moveSelection(by step: Int) {
         if store.numberEntry == nil {
-            // ↑ and ↓ also stop on the Quiet header so ↵ can fold or open it.
             let ids = store.navigableIDs
             guard !ids.isEmpty else { return }
             let index = ids.firstIndex { $0 == store.selectedID }
