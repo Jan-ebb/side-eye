@@ -146,7 +146,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             preferencesWindow = window
         }
         NSApp.activate()
-        window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
+        window.makeKey()
     }
 
     /// Opens the welcome window once, for someone who has never run Side Eye. Saved history means they have.
@@ -178,7 +179,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             welcomeWindow = window
         }
         NSApp.activate()
-        welcomeWindow?.makeKeyAndOrderFront(nil)
+        // Side Eye has no Dock icon and is often started by a script, so macOS does not always make it
+        // the active app, and a window ordered front the usual way then opens behind whatever the
+        // person is looking at.
+        welcomeWindow?.orderFrontRegardless()
+        welcomeWindow?.makeKey()
     }
 
     private func performPreferenceAction(_ action: PreferencesModel.Action) {
