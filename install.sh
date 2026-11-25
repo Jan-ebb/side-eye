@@ -39,9 +39,11 @@ base="${SIDE_EYE_DOWNLOAD_BASE:-$repository/releases/download/$tag}"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
-echo "Downloading Side Eye $version…"
-curl -fsSL "$base/$zip" -o "$work/$zip" || stop "Couldn't download Side Eye $version."
-curl -fsSL "$base/$zip.sha256" -o "$work/$zip.sha256" || stop "Couldn't download the checksum for Side Eye $version."
+# The name is in braces and the text plain ASCII: the bash that ships with macOS reads a character
+# such as an ellipsis straight after a variable as part of its name.
+echo "Downloading Side Eye ${version}..."
+curl -fsSL "$base/$zip" -o "$work/$zip" || stop "Couldn't download Side Eye ${version}."
+curl -fsSL "$base/$zip.sha256" -o "$work/$zip.sha256" || stop "Couldn't download the checksum for Side Eye ${version}."
 expected="$(tr -d '[:space:]' < "$work/$zip.sha256")"
 actual="$(shasum -a 256 "$work/$zip" | awk '{print $1}')"
 if [[ -z "$expected" || "$expected" != "$actual" ]]; then
@@ -68,6 +70,6 @@ target="$destination/$app"
 if [[ -e "$target" ]]; then rm -rf "$target"; fi
 mv "$work/unpacked/$app" "$target"
 
-echo "Installed Side Eye $version in $destination."
+echo "Installed Side Eye ${version} in ${destination}."
 open "$target"
-echo "It has no Dock icon: look for the pill at the right edge of your screen, or press ⌃⌥Space."
+echo "It has no Dock icon: look for the pill at the right edge of your screen, or press Control-Option-Space."
