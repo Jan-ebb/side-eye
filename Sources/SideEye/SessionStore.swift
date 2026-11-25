@@ -832,7 +832,7 @@ final class SessionStore: ObservableObject {
             saveSession(nil, id: existing.id)
         }
         let session = Session(id: "link:" + UUID().uuidString, source: source, title: title,
-                              detail: "Pinned link", status: .unknown, updatedAt: Date(),
+                              detail: Session.linkDetail, status: .unknown, updatedAt: Date(),
                               route: .url(url.absoluteString))
         history.links.append(session)
         latest[session.id] = session

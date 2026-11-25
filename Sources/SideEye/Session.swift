@@ -64,6 +64,9 @@ enum Route: Codable, Hashable, Sendable {
 }
 
 struct Session: Identifiable, Codable, Equatable, Sendable {
+    /// What a chat added by hand through "Add chat link…" says in place of where it runs.
+    static let linkDetail = "Chat link"
+
     let id: String
     let source: Source
     let title: String

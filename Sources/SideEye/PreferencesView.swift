@@ -109,7 +109,7 @@ struct PreferencesView: View {
                 SettingsDisclosure(title: "What the statuses mean", isExpanded: $showsStatusGuide) {
                     VStack(alignment: .leading, spacing: 10) {
                         statusDefinition("Needs you", "An approval, decision or answer is pending.", group: .needsInput)
-                        statusDefinition("Review", "The agent handed work back and you have not read it yet.", group: .finished)
+                        statusDefinition("Review", "The agent handed work back. Unread ones are new.", group: .finished)
                         statusDefinition("Working", "The app reports a turn in progress.", group: .working)
                         statusDefinition("Idle", "Nothing is happening. Idle chats stay out of the Inbox until new activity.",
                                          group: .quiet)

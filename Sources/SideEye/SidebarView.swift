@@ -328,7 +328,7 @@ private extension SessionRow {
     var showsUnreadDot: Bool { isManuallyUnread && session.status != .ready }
 
     var stateTitle: String {
-        if session.status == .unknown && session.detail == "Pinned link" { return "Pinned link" }
+        if session.status == .unknown && session.detail == Session.linkDetail { return Session.linkDetail }
         return statusLabel
     }
 
@@ -337,7 +337,7 @@ private extension SessionRow {
         case .needsInput:
             return "Waiting for you to respond or approve."
         case .working:
-            return "The source reports an active turn."
+            return "The app reports a turn in progress."
         case .ready:
             return needsReview ? "Queued for review." : "The latest update is marked as read."
         case .idle:
@@ -354,7 +354,7 @@ private extension SessionRow {
 
     var timestamp: Date? {
         if let shownCompletion { return shownCompletion }
-        guard session.detail != "Pinned link" else { return nil }
+        guard session.detail != Session.linkDetail else { return nil }
         let activity = session.status == .idle
             ? max(session.updatedAt, session.completedAt ?? .distantPast)
             : session.updatedAt
@@ -955,7 +955,7 @@ struct SidebarView: View {
             switch store.emptiness {
             case .noApps: return "No agent apps found"
             case .noChats: return "No chats yet"
-            case .caughtUp: return "Nothing in your inbox"
+            case .caughtUp: return "Nothing in your Inbox"
             }
         case .favorites: return "No favorites yet"
         case .needsInput: return "Nothing needs you"
@@ -980,7 +980,7 @@ struct SidebarView: View {
                 return "Start a chat in one of your agent apps and it appears here within a few seconds."
             case .caughtUp:
                 return store.grokMainOnly && store.mainGrokIDs.isEmpty
-                    ? "Mark your main Grok agents in Settings."
+                    ? "Mark your main Grok Bot agents in Settings."
                     : "Chats land here when an agent needs you, finishes or starts work. Press / to find any other chat."
             }
         case .favorites: return "Hover a chat and click its star, or select it and press F."
@@ -1373,9 +1373,9 @@ private struct SidebarRow: View {
             hovered = inside
             hover(inside)
         }
-        .help([session.title, session.source.name, session.detail, isMain ? "Main Grok agent" : nil, row.stateTitle,
+        .help([session.title, session.source.name, session.detail, isMain ? "Main Grok Bot agent" : nil, row.stateTitle,
                row.stateDescription, row.timestampDescription, session.stateSummary, keyHelp, actionHelp,
-               keyboardSelected && !jumping ? (row.needsReview ? "⌘U Mark read" : "⌘U Mark unread") : nil]
+               keyboardSelected && !jumping ? (row.needsReview ? "⌘U Mark as read" : "⌘U Mark as unread") : nil]
             .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n"))
         .accessibilityLabel(session.title)
         .accessibilityValue([session.source.name, isMain ? "Main agent" : nil, row.stateTitle,
@@ -1449,8 +1449,8 @@ struct RailView: View {
         if input > 0 && review > 0 { return "\(inputDescription), \(review) to review" }
         if input > 0 { return inputDescription }
         if review > 0 { return "\(review) to review" }
-        if store.workingCount > 0 { return "No sessions need attention, \(store.workingCount) working" }
-        return "No sessions need attention"
+        if store.workingCount > 0 { return "No chats need attention, \(store.workingCount) working" }
+        return "No chats need attention"
     }
 
     var body: some View {
@@ -1494,7 +1494,7 @@ struct RailView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Show Side Eye sessions")
+        .accessibilityLabel("Show Side Eye chats")
         .accessibilityValue(activity(input: input, review: total - input))
     }
 }

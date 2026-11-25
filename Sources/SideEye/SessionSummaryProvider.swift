@@ -55,7 +55,7 @@ final class SessionSummaryProvider: @unchecked Sendable {
         let now = Date()
         let (annotated, startWorker) = lock.withLock {
             let work = sessions.compactMap { session -> Work? in
-                guard session.detail != "Pinned link", session.status != .unknown else {
+                guard session.detail != Session.linkDetail, session.status != .unknown else {
                     return nil
                 }
                 if session.source == .grok, grokMainOnly, !mainGrokIDs.contains(session.id) { return nil }

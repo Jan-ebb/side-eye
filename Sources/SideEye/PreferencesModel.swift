@@ -147,7 +147,7 @@ final class PreferencesModel: ObservableObject {
                 try service.unregister()
             }
         } catch {
-            loginItemNotice = "Couldn’t update launch at login."
+            loginItemNotice = "Couldn’t change Open at login."
         }
         refreshSystemState()
     }
