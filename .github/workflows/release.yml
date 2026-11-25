@@ -1,7 +1,7 @@
 name: Release
 
-# Push a tag such as v0.16.0 that matches the VERSION file. The workflow builds a universal app,
-# publishes it as a GitHub release and points the Homebrew cask at it.
+# Push a tag such as v0.16.0 that matches the VERSION file. The workflow builds a universal app with
+# llama.cpp's server inside, publishes it as a GitHub release and points the Homebrew cask at it.
 #
 # Signing is optional. With these repository secrets the app is signed with a Developer ID and
 # notarized, so macOS opens it without a warning; without them it is ad-hoc signed.
@@ -54,6 +54,9 @@ jobs:
           xcrun notarytool store-credentials side-eye-notary --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD"
           echo "SIDE_EYE_SIGN_IDENTITY=$DEVELOPER_ID_NAME" >> "$GITHUB_ENV"
           echo "SIDE_EYE_NOTARY_PROFILE=side-eye-notary" >> "$GITHUB_ENV"
+      - name: Make sure cmake is installed
+        # The release script builds llama.cpp's server, which needs it.
+        run: command -v cmake || brew install cmake
       - name: Build the download
         run: ./Scripts/release.sh
       - name: Publish the release
