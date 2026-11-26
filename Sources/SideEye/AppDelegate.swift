@@ -5,6 +5,15 @@ import SwiftUI
 private let fixtureMode = CommandLine.arguments.contains("--ui-check") ||
     CommandLine.arguments.contains("--settings-check") || CommandLine.arguments.contains("--welcome-check")
 
+/// The one call that still takes the front for an app without a Dock icon. Apple marks it as
+/// deprecated in favour of `activate()`, which asks and is refused; reaching it through a protocol
+/// keeps the build free of that warning.
+@MainActor
+private protocol FrontTaking {
+    func activate(ignoringOtherApps flag: Bool)
+}
+extension NSApplication: FrontTaking {}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let store = SessionStore(defaults: fixtureMode ? nil : .standard)
@@ -145,7 +154,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if !fixtureMode { window.setFrameAutosaveName("Side Eye Settings") }
             preferencesWindow = window
         }
-        NSApp.activate()
+        takeFront()
         window.orderFrontRegardless()
         window.makeKey()
     }
@@ -184,12 +193,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             window.center()
             welcomeWindow = window
         }
-        NSApp.activate()
-        // Side Eye has no Dock icon and is often started by a script, so macOS does not always make it
-        // the active app, and a window ordered front the usual way then opens behind whatever the
-        // person is looking at.
+        takeFront()
         welcomeWindow?.orderFrontRegardless()
         welcomeWindow?.makeKey()
+    }
+
+    /// Makes Side Eye the active app before it shows a window. Side Eye has no Dock icon and is often
+    /// started by a script, and then `activate()` alone is refused: the window opens behind whatever
+    /// the person is looking at, or in front but drawn as inactive, with its switches washed out.
+    private func takeFront() {
+        (NSApp as FrontTaking).activate(ignoringOtherApps: true)
     }
 
     /// Closing the welcome window, with its button or the red one, is what counts as having seen it.
