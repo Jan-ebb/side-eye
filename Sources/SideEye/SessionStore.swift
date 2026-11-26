@@ -92,7 +92,17 @@ final class SessionStore: ObservableObject {
     @Published private(set) var hiddenCount = 0
     @Published private(set) var isLoading = true
     @Published var keyboardMode = false
-    @Published var selectedID: String?
+    /// The row the keys and the bar under the list act on. Moving it any other way than with ⇧↑ and ⇧↓
+    /// drops the marks.
+    @Published var selectedID: String? {
+        didSet { if !extendingMarks, selectedID != oldValue { clearMarks() } }
+    }
+    /// Chats marked together with ⇧↑ and ⇧↓ or a Shift-click, in list order, so that one key archives
+    /// or moves all of them. Empty unless at least two are marked.
+    @Published private(set) var markedIDs: [String] = []
+    /// Where the run of marks began. The marks are always the rows from here to the selected one.
+    private var markAnchor: String?
+    private var extendingMarks = false
     @Published var notice: String?
     @Published var noticeOffersUndo = false
     @Published private var searchQuery: String?
@@ -109,7 +119,9 @@ final class SessionStore: ObservableObject {
     /// Favorites, in the order they were added. They stay in their groups in the Inbox and have their own tab.
     @Published private(set) var pinnedIDs: [String]
     @Published private(set) var showsAutomationRuns: Bool
-    @Published var numberEntry: String?
+    @Published var numberEntry: String? {
+        didSet { if numberEntry != nil { clearMarks() } }
+    }
     /// The ⌘K palette while it is open.
     @Published var palette: PaletteState?
     @Published private(set) var grokMainOnly = false
@@ -306,9 +318,65 @@ final class SessionStore: ObservableObject {
         }?.id
     }
 
+    // MARK: Marking several chats
+
+    /// Marks are for triage, so they exist where Later and Archive do: the Inbox and Later, outside
+    /// search, the number picker and the palette.
+    var canMark: Bool {
+        (filter == .all || filter == .later) && !isSearching && numberEntry == nil && palette == nil
+    }
+
+    var hasMarks: Bool { markedIDs.count > 1 }
+
+    /// The marked chats, top to bottom.
+    var markedSessions: [Session] {
+        guard hasMarks else { return [] }
+        let marked = Set(markedIDs)
+        return shownRows.filter { marked.contains($0.id) }.map(\.session)
+    }
+
+    /// ⇧↑ and ⇧↓: moves the selection one row and marks every row from where the run began to it.
+    /// Coming back to the starting row leaves nothing marked.
+    func extendMarks(by step: Int) {
+        let ids = navigableIDs
+        guard canMark, let current = selectedID, let from = ids.firstIndex(of: current) else { return }
+        mark(through: max(0, min(ids.count - 1, from + step)), from: from, in: ids)
+    }
+
+    /// A Shift-click: marks every row from the selected one, or from where the run began, to this one.
+    func extendMarks(to id: String) {
+        let ids = navigableIDs
+        guard canMark, let to = ids.firstIndex(of: id) else { return }
+        mark(through: to, from: selectedID.flatMap(ids.firstIndex(of:)) ?? to, in: ids)
+    }
+
+    private func mark(through to: Int, from: Int, in ids: [String]) {
+        let anchor = markAnchor.flatMap(ids.firstIndex(of:)) ?? from
+        markAnchor = ids[anchor]
+        extendingMarks = true
+        if selectedID != ids[to] { selectedID = ids[to] }
+        extendingMarks = false
+        let marked = anchor == to ? [] : Array(ids[min(anchor, to)...max(anchor, to)])
+        if markedIDs != marked { markedIDs = marked }
+    }
+
+    func clearMarks() {
+        markAnchor = nil
+        if !markedIDs.isEmpty { markedIDs = [] }
+    }
+
+    /// A marked chat that has left the list is no longer marked, and one chat alone is not a set of marks.
+    private func pruneMarks() {
+        guard !markedIDs.isEmpty else { return }
+        let listed = Set(navigableIDs)
+        let kept = markedIDs.filter(listed.contains)
+        if kept.count < 2 || !canMark { clearMarks() } else if kept != markedIDs { markedIDs = kept }
+    }
+
     func setFilter(_ value: SessionFilter) {
         guard value != filter else { return }
         filter = value
+        clearMarks()
         syncSelection(resetNumber: true)
         onRowsChanged?()
     }
@@ -362,6 +430,7 @@ final class SessionStore: ObservableObject {
         let nextQuery = value.map { String($0.prefix(80)) }
         let changed = nextQuery != searchQuery
         if changed { searchQuery = nextQuery }
+        if nextQuery != nil { clearMarks() }
         syncSelection(resetNumber: changed)
         // Results are ordered best match first, so ↵ should open the top one as you type.
         if changed, let nextQuery, !nextQuery.isEmpty, let top = shownRows.first { selectedID = top.id }
@@ -400,9 +469,15 @@ final class SessionStore: ObservableObject {
         var archivedWhileWorking: Set<String>?
     }
 
+    /// One chat's move into or out of Later, with what it had saved before, for Undo.
+    private struct LaterChange {
+        let id: String
+        let previous: SavedSession?
+    }
+
     private enum LastChange {
         case archive([String])
-        case later(String, previous: SavedSession?)
+        case later([LaterChange])
     }
 
     private let defaults: UserDefaults?
@@ -681,17 +756,25 @@ final class SessionStore: ObservableObject {
         return rows.first { $0.id == history.lastOpened }?.session
     }
 
-    func hide(_ session: Session) {
-        guard let current = rows.first(where: { $0.id == session.id })?.session else { return }
-        let index = shownRows.firstIndex { $0.id == current.id }
-        let previous = history.savedSessions?[current.id]
-        saveSession(SavedSession(snapshot: Self.snapshot(of: current), deferredAt: previous?.deferredAt,
-                                 until: previous?.until, midRun: previous?.midRun), id: current.id)
-        history.dismissed[current.id] = Date()
+    func hide(_ session: Session) { hide([session]) }
+
+    /// Archives chats in one step, as one change to undo.
+    func hide(_ sessions: [Session]) {
+        let current = sessions.compactMap { session in rows.first { $0.id == session.id }?.session }
+        guard !current.isEmpty else { return }
+        let archived = Set(current.map(\.id))
+        let index = shownRows.firstIndex { archived.contains($0.id) }
         var midRun = history.archivedWhileWorking ?? []
-        if current.status == .working { midRun.insert(current.id) } else { midRun.remove(current.id) }
+        let now = Date()
+        for session in current {
+            let previous = history.savedSessions?[session.id]
+            saveSession(SavedSession(snapshot: Self.snapshot(of: session), deferredAt: previous?.deferredAt,
+                                     until: previous?.until, midRun: previous?.midRun), id: session.id)
+            history.dismissed[session.id] = now
+            if session.status == .working { midRun.insert(session.id) } else { midRun.remove(session.id) }
+        }
         history.archivedWhileWorking = midRun.isEmpty ? nil : midRun
-        lastChange = .archive([current.id])
+        lastChange = .archive(current.map(\.id))
         rebuild()
         selectRow(afterRemoving: index)
         persist()
@@ -739,20 +822,32 @@ final class SessionStore: ObservableObject {
     }
 
     @discardableResult
-    func toggleLater(_ session: Session) -> Bool? {
-        guard let current = rows.first(where: { $0.id == session.id })?.session else { return nil }
-        let index = shownRows.firstIndex { $0.id == current.id }
-        let previous = history.savedSessions?[current.id]
-        let deferSession = previous?.deferredAt == nil
-        if deferSession {
-            saveSession(SavedSession(snapshot: Self.snapshot(of: current), deferredAt: Date(),
-                                     midRun: current.status == .working ? true : nil), id: current.id)
-        } else if latest[current.id] == nil, let previous {
-            saveSession(SavedSession(snapshot: previous.snapshot, deferredAt: nil), id: current.id)
-        } else {
-            saveSession(nil, id: current.id)
+    func toggleLater(_ session: Session) -> Bool? { toggleLater([session]) }
+
+    /// Moves chats to Later, or back to the Inbox if the first of them is already in Later, as one
+    /// change to undo. Returns which way they went.
+    @discardableResult
+    func toggleLater(_ sessions: [Session]) -> Bool? {
+        let current = sessions.compactMap { session in rows.first { $0.id == session.id }?.session }
+        guard let first = current.first else { return nil }
+        let moved = Set(current.map(\.id))
+        let index = shownRows.firstIndex { moved.contains($0.id) }
+        let deferSession = history.savedSessions?[first.id]?.deferredAt == nil
+        var changes: [LaterChange] = []
+        for session in current {
+            let previous = history.savedSessions?[session.id]
+            guard (previous?.deferredAt == nil) == deferSession else { continue }
+            if deferSession {
+                saveSession(SavedSession(snapshot: Self.snapshot(of: session), deferredAt: Date(),
+                                         midRun: session.status == .working ? true : nil), id: session.id)
+            } else if latest[session.id] == nil, let previous {
+                saveSession(SavedSession(snapshot: previous.snapshot, deferredAt: nil), id: session.id)
+            } else {
+                saveSession(nil, id: session.id)
+            }
+            changes.append(LaterChange(id: session.id, previous: previous))
         }
-        lastChange = .later(current.id, previous: previous)
+        lastChange = .later(changes)
         rebuild()
         selectRow(afterRemoving: index)
         persist()
@@ -771,7 +866,7 @@ final class SessionStore: ObservableObject {
                                  until: until,
                                  midRun: alreadyLater ? previous?.midRun : (current.status == .working ? true : nil)),
                     id: current.id)
-        lastChange = .later(current.id, previous: previous)
+        lastChange = .later([LaterChange(id: current.id, previous: previous)])
         rebuild()
         selectRow(afterRemoving: index)
         persist()
@@ -794,7 +889,7 @@ final class SessionStore: ObservableObject {
             unread.insert(id)
         }
         history.manuallyUnread = unread
-        if case .later(let id, _) = lastChange, due[id] != nil { lastChange = nil }
+        if case .later(let changes) = lastChange, changes.contains(where: { due[$0.id] != nil }) { lastChange = nil }
         persist()
     }
 
@@ -838,11 +933,13 @@ final class SessionStore: ObservableObject {
             let restored = ids.filter { history.dismissed.removeValue(forKey: $0) != nil }
             guard !restored.isEmpty else { return false }
             pruneRecoveredSnapshots(in: latest)
-        case .later(let id, let previous):
-            if previous == nil, latest[id] == nil, let saved = history.savedSessions?[id] {
-                saveSession(SavedSession(snapshot: saved.snapshot, deferredAt: nil), id: id)
-            } else {
-                saveSession(previous, id: id)
+        case .later(let changes):
+            for change in changes {
+                if change.previous == nil, latest[change.id] == nil, let saved = history.savedSessions?[change.id] {
+                    saveSession(SavedSession(snapshot: saved.snapshot, deferredAt: nil), id: change.id)
+                } else {
+                    saveSession(change.previous, id: change.id)
+                }
             }
         }
         rebuild()
@@ -958,6 +1055,7 @@ final class SessionStore: ObservableObject {
             }
         }
         if selectedID != nextSelection { selectedID = nextSelection }
+        pruneMarks()
     }
 
     private func shouldReview(_ session: Session, includingManual: Bool = true) -> Bool {
@@ -984,7 +1082,7 @@ final class SessionStore: ObservableObject {
                 continue
             }
             saveSession(nil, id: id)
-            if case .later(let changed, _) = lastChange, changed == id { lastChange = nil }
+            if case .later(let changes) = lastChange, changes.contains(where: { $0.id == id }) { lastChange = nil }
         }
     }
 

@@ -112,6 +112,7 @@ Single keys act on the list while the sidebar is open. Letters are commands, so 
 | Key | Action |
 | --- | --- |
 | ↑ / ↓, or K / J | Move up or down. They work as soon as the sidebar opens, including on hover. The pointer selects too: the row under it is the selected one, so the keys and the buttons in the bar act on it. |
+| ⇧↑ / ⇧↓, or ⇧K / ⇧J | Mark several chats in a row. E then archives all of them and L moves all of them to Later, as one step that Z undoes. Esc drops the marks. A Shift-click marks up to the clicked row. |
 | Return | Open the selected chat. |
 | 1–9 | Open rows 1–9 from top to bottom. |
 | 0 | Jump to any numbered row. Type the number, then press Return. |
@@ -128,7 +129,7 @@ Single keys act on the list while the sidebar is open. Letters are commands, so 
 | F | Favorite the selected chat, or unfavorite it. P works too. |
 | ⌘U | Mark as read or unread. |
 | Z | Undo the last move. ⌘Z works too. |
-| Esc | Leave search, or close the sidebar. |
+| Esc | Leave search, drop the marks, or close the sidebar. |
 | ⌘, | Open Settings. |
 
 These work from any app. If another app already uses one, **Settings → Shortcuts** says so.

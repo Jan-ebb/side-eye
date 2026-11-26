@@ -146,6 +146,9 @@ final class OverlayController {
 
     var onOpen: ((Session) -> Void)?
     var onHide: ((Session) -> Void)?
+    /// Archive and Later for several marked chats at once.
+    var onHideMarked: (([Session]) -> Void)?
+    var onLaterMarked: (([Session]) -> Void)?
     var onShowWelcome: (() -> Void)?
     var onQuit: (() -> Void)?
     /// Puts a menu on screen. The on-screen checks replace it, since a real menu waits for a choice.
@@ -199,6 +202,8 @@ final class OverlayController {
                                archiveRead: { [weak self] in self?.onArchiveRead?() },
                                runPalette: { [weak self] in self?.runPaletteEntry($0) },
                                onHighlightRow: { [weak self] in self?.highlightRow($0) },
+                               hideMarked: { [weak self] in _ = self?.actOnMarks(archive: true) },
+                               laterMarked: { [weak self] in _ = self?.actOnMarks(archive: false) },
                                pointer: pointer,
                                drawsSurface: false)
         let sidebarContent = HoverHost(rootView: list)
@@ -401,6 +406,7 @@ final class OverlayController {
         keyboardPinned = false
         keyboardSelectionLocation = nil
         store.keyboardMode = false
+        store.clearMarks()
         pointer.move(to: nil)
         sidebar.acceptsKeyboard = false
         sidebar.orderOut(nil)
@@ -416,8 +422,10 @@ final class OverlayController {
     }
 
     private func highlightRow(_ id: String) {
-        // Revealing or scrolling the list can move rows under a stationary pointer.
-        guard followsPointer, store.numberEntry == nil, keyboardSelectionLocation != NSEvent.mouseLocation else { return }
+        // Revealing or scrolling the list can move rows under a stationary pointer. And while chats are
+        // marked the pointer selects nothing, or brushing the mouse would drop the marks.
+        guard followsPointer, store.numberEntry == nil, !store.hasMarks,
+              keyboardSelectionLocation != NSEvent.mouseLocation else { return }
         keyboardSelectionLocation = nil
         if !keyboardPinned { store.keyboardMode = false }
         if store.selectedID != id { store.selectedID = id }
@@ -593,8 +601,9 @@ final class OverlayController {
         precondition(openedID == rows[selection].id, "Return should open the hover selection")
     }
 
-    /// The row under the pointer becomes the selected one. The move is handed to the sidebar's view the
-    /// way its window hands it one, so the check needs no real pointer.
+    /// The row under the pointer becomes the selected one, and marked chats stay marked when the pointer
+    /// passes over other rows. The move is handed to the sidebar's view the way its window hands it one,
+    /// so the check needs no real pointer.
     func checkPointerSelection() async {
         precondition(isShowing, "The pointer check needs the sidebar open")
         let rows = store.shownRows
@@ -625,6 +634,23 @@ final class OverlayController {
         try? await Task.sleep(for: .milliseconds(120))
         precondition(pointer.region == .row(other.id), "The sidebar should know which row the pointer is on")
         precondition(store.selectedID == other.id, "The row under the pointer should become the selected one")
+
+        // With chats marked, the pointer passing over another row leaves the marks and the selection alone.
+        let ids = store.navigableIDs
+        if store.canMark, let start = ids.firstIndex(of: other.id),
+           let away = rows.first(where: { row in
+               row.id != other.id && ids.firstIndex(of: row.id).map { abs($0 - start) > 1 } == true
+                   && pointer.frame(for: .row(row.id)) != nil
+           }), let awayPlace = pointer.frame(for: .row(away.id)) {
+            store.extendMarks(by: start + 1 < ids.count ? 1 : -1)
+            let marked = store.markedIDs, selected = store.selectedID
+            precondition(store.hasMarks)
+            point(at: awayPlace)
+            try? await Task.sleep(for: .milliseconds(120))
+            precondition(store.markedIDs == marked && store.selectedID == selected,
+                         "The pointer must not drop the marks")
+            store.clearMarks()
+        }
     }
 
     /// The three dots in the sidebar open their menu, with Quit in it. The menu itself is not shown: a
@@ -669,6 +695,18 @@ final class OverlayController {
         precondition(store.query.isEmpty && isShowing)
         press("\u{f701}", code: 125)
         precondition(store.selectedID == "one")
+        // ⇧↓ marks the rows it passes, ⇧↑ takes the last mark back, and Esc drops them and keeps the sidebar.
+        let listed = store.shownRows.map(\.id)
+        if let start = listed.firstIndex(of: "one"), start + 2 < listed.count {
+            press("\u{f701}", code: 125, flags: .shift)
+            press("\u{f701}", code: 125, flags: .shift)
+            precondition(store.markedIDs == Array(listed[start...start + 2]), "⇧↓ should mark the rows it passes")
+            press("\u{f700}", code: 126, flags: .shift)
+            precondition(store.markedIDs == Array(listed[start...start + 1]), "⇧↑ should take the last mark back")
+            press("\u{1b}", code: 53)
+            precondition(!store.hasMarks && isShowing, "Esc should drop the marks and keep the sidebar open")
+            store.selectedID = "one"
+        }
         let placeBeforeReading = store.shownRows.map(\.id)
         press("u", code: 32, flags: .command)
         precondition(store.rows.first { $0.id == "one" }?.statusLabel == "Read")
@@ -1363,7 +1401,7 @@ final class OverlayController {
         if !store.keyboardMode { store.keyboardMode = true }
         keyboardSelectionLocation = NSEvent.mouseLocation
         if event.keyCode == 125 || event.keyCode == 126 {
-            moveSelection(by: event.keyCode == 125 ? 1 : -1)
+            moveSelection(by: event.keyCode == 125 ? 1 : -1, marking: flags.contains(.shift))
             return true
         }
         if let numberEntry = store.numberEntry {
@@ -1383,7 +1421,9 @@ final class OverlayController {
         let rows = store.shownRows
         switch event.keyCode {
         case 53:
-            if store.isSearching { store.setQuery(nil) } else { close() }
+            if store.isSearching { store.setQuery(nil) }
+            else if store.hasMarks { store.clearMarks() }
+            else { close() }
         case 48:
             // Tab only switches between the tabs; groups are ⌥↑ and ⌥↓.
             let filters = SessionFilter.tabs
@@ -1398,6 +1438,7 @@ final class OverlayController {
         case 51, 117:
             if store.isSearching { store.setQuery(String(store.query.dropLast())) }
             else if store.filter == .favorites { if !event.isARepeat { report(Self.favoritesKeepNotice) } }
+            else if actOnMarks(archive: true) {}
             else if let target = store.removeTarget(allowSelection: true) { onHide?(target) }
         default:
             guard let key = event.characters, !key.isEmpty,
@@ -1414,8 +1455,9 @@ final class OverlayController {
                 case "0":
                     jumpByNumber()
                     return true
-                case "e" where flags.contains(.shift):
-                    // ⇧E clears every reply you have already read out of the Inbox.
+                case "e" where flags.contains(.shift) && !store.hasMarks:
+                    // ⇧E clears every reply you have already read out of the Inbox. With chats marked,
+                    // Shift is still down from marking them, and E means those.
                     if store.filter == .all, !event.isARepeat { onArchiveRead?() }
                     return true
                 case "r" where store.filter == .archive:
@@ -1424,6 +1466,7 @@ final class OverlayController {
                     }
                     return true
                 case "e", "l":
+                    if !event.isARepeat, actOnMarks(archive: key.lowercased() == "e") { return true }
                     if store.filter != .archive, store.filter != .favorites, !event.isARepeat, let target = store.removeTarget(allowSelection: true) {
                         if key.lowercased() == "e" { onHide?(target) }
                         else { onLater?(target) }
@@ -1440,7 +1483,7 @@ final class OverlayController {
                     }
                     return true
                 case "j", "k":
-                    moveSelection(by: key.lowercased() == "j" ? 1 : -1)
+                    moveSelection(by: key.lowercased() == "j" ? 1 : -1, marking: flags.contains(.shift))
                     return true
                 case "z":
                     if !event.isARepeat { onUndo?() }
@@ -1539,6 +1582,15 @@ final class OverlayController {
         }
     }
 
+    /// Archives the marked chats, or moves them to Later or back. False when fewer than two are marked,
+    /// and the key or button then means the selected chat.
+    private func actOnMarks(archive: Bool) -> Bool {
+        let marked = store.markedSessions
+        guard marked.count > 1 else { return false }
+        if archive { onHideMarked?(marked) } else { onLaterMarked?(marked) }
+        return true
+    }
+
     /// The three dots: what there is beyond the list. Quit is here because Side Eye has no Dock icon, and
     /// its menu bar icon can sit hidden behind a notch or a menu bar manager.
     static func moreMenu(settings: @escaping () -> Void, welcome: @escaping () -> Void,
@@ -1564,7 +1616,11 @@ final class OverlayController {
         DispatchQueue.main.async { [weak self] in self?.presentMenu(menu, place) }
     }
 
-    private func moveSelection(by step: Int) {
+    private func moveSelection(by step: Int, marking: Bool = false) {
+        if marking, store.canMark {
+            store.extendMarks(by: step)
+            return
+        }
         if store.numberEntry == nil {
             let ids = store.navigableIDs
             guard !ids.isEmpty else { return }

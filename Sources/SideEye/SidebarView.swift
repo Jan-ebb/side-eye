@@ -492,6 +492,9 @@ struct SidebarView: View {
     var archiveRead: () -> Void = {}
     var runPalette: (PaletteEntry) -> Void = { _ in }
     var onHighlightRow: ((String) -> Void)? = nil
+    /// Archive and Later for every marked chat.
+    var hideMarked: () -> Void = {}
+    var laterMarked: () -> Void = {}
     /// Where the pointer is. The sidebar's window feeds it; a view drawn off screen has one that never moves.
     @ObservedObject var pointer = PointerTracker()
     var drawsSurface = true
@@ -874,6 +877,7 @@ struct SidebarView: View {
         let isMain = row.session.source == .grok && store.mainGrokIDs.contains(row.id)
         let keyboardSelected = keyboardTarget == row.id
         let pointerSelected = !jumping && !store.keyboardMode && store.selectedID == row.id
+        let marked = store.hasMarks && store.markedIDs.contains(row.id)
         let preview = OverlayMetrics.preview(for: row, in: store)
         let hasActions = !browsingArchive && !jumping && !store.isSearching && store.selectedID == row.id
         // Status shows once per view, always in words: the Inbox has its group bands; flat lists
@@ -888,12 +892,12 @@ struct SidebarView: View {
                           canFavorite: canFavorite && !jumping,
                           toggleFavorite: { togglePin(row.session) },
                           jumping: jumping, searching: store.isSearching,
-                          keyboardSelected: keyboardSelected, selected: keyboardSelected || pointerSelected,
+                          keyboardSelected: keyboardSelected, selected: keyboardSelected || pointerSelected || marked,
                           hovered: hoveredRowID == row.id,
                           showsMainChip: isMain && (jumping || store.showsAllSummaries),
                           isMain: isMain, colors: colors, now: now, numberWidth: numberWidth,
                           actionHelp: hasActions ? "E Archive · L \(laterActionLabel)" : nil,
-                          activate: { open(row.session) })
+                          activate: { click(row) })
             .pointerRegion(.row(row.id), in: pointer)
             .contextMenu { rowMenu(row, isMain: isMain) }
             // No .id(row.id) here: ForEach already identifies rows by their ID, which is what scrollTo uses. A
@@ -969,6 +973,12 @@ struct SidebarView: View {
         .padding(.leading, OverlayMetrics.rowInset)
         .frame(height: OverlayMetrics.allClearHeight)
         .accessibilityElement(children: .combine)
+    }
+
+    /// A click opens the chat. With Shift held it marks every row from the selected one to this one.
+    private func click(_ row: SessionRow) {
+        if NSEvent.modifierFlags.contains(.shift), store.canMark { store.extendMarks(to: row.id) }
+        else { open(row.session) }
     }
 
     /// The pointer went from one row or palette entry to another.
@@ -1159,6 +1169,13 @@ struct SidebarView: View {
                 if let selected {
                     barButton("Open", key: "↵", prominent: true, accessibilityHint: "Return") { open(selected.session) }
                 }
+            } else if store.hasMarks, triages {
+                // Several chats are marked: the bar says how many and acts on all of them.
+                Text("\(store.markedIDs.count) chats marked")
+                    .accessibilityAddTraits(.updatesFrequently)
+                Spacer(minLength: 0)
+                barButton(laterActionLabel, key: "L", accessibilityHint: "L", action: laterMarked)
+                barButton("Archive", key: "E", prominent: true, accessibilityHint: "E", action: hideMarked)
             } else {
                 barButton("Search", key: "/", leadingKey: true,
                           accessibilityLabel: browsingArchive ? "Search archive" : "Search chats",

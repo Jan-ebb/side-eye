@@ -118,6 +118,7 @@ enum SelfChecks {
         checkOpenAtLogin()
         checkSummaryNote(now: now)
         checkUpdates(now: now)
+        checkMarks(now: now)
         checkPointerTracker(now: now)
         checkMoreMenu()
         checkSummaryModelDownload()
@@ -559,6 +560,86 @@ enum SelfChecks {
         bare.startUpdateChecks(now: now.addingTimeInterval(30 * day))
         settle()
         precondition(bare.update == nil)
+    }
+
+    /// ⇧↑ and ⇧↓ mark a run of chats, a Shift-click does the same with the mouse, and Archive and Later
+    /// then take all of them in one step that one Undo reverses.
+    private static func checkMarks(now: Date) {
+        let store = SessionStore(defaults: nil)
+        store.ingest((1...5).map {
+            sample("mark\($0)", .codex, "Marked chat \($0)", .working, now.addingTimeInterval(-Double($0) * 60))
+        })
+        let ids = store.navigableIDs
+        precondition(ids.count == 5 && store.canMark && !store.hasMarks)
+
+        store.selectedID = ids[1]
+        store.extendMarks(by: 1)
+        precondition(store.markedIDs == Array(ids[1...2]) && store.selectedID == ids[2], "⇧↓ marks the row it leaves and the one it reaches")
+        store.extendMarks(by: 1)
+        precondition(store.markedIDs == Array(ids[1...3]))
+        store.extendMarks(by: -1)
+        precondition(store.markedIDs == Array(ids[1...2]), "⇧↑ takes the last mark back")
+        store.extendMarks(by: -1)
+        precondition(!store.hasMarks && store.markedIDs.isEmpty && store.selectedID == ids[1], "Back where the run began, nothing is marked")
+        store.extendMarks(by: -1)
+        precondition(store.markedIDs == Array(ids[0...1]) && store.selectedID == ids[0], "The run goes upwards from the same start")
+        store.extendMarks(by: -1)
+        precondition(store.markedIDs == Array(ids[0...1]), "The top row ends the run")
+
+        store.selectedID = ids[3]
+        precondition(!store.hasMarks, "Moving the selection any other way drops the marks")
+        store.extendMarks(to: ids[1])
+        precondition(store.markedIDs == Array(ids[1...3]) && store.selectedID == ids[1], "A Shift-click marks from the selected row to the clicked one")
+        store.extendMarks(to: ids[4])
+        precondition(store.markedIDs == Array(ids[3...4]), "A second Shift-click keeps where the run began")
+
+        // Archive takes every marked chat, and one Undo brings them all back.
+        store.selectedID = ids[1]
+        store.extendMarks(by: 1)
+        store.extendMarks(by: 1)
+        let marked = store.markedSessions
+        precondition(marked.map(\.id) == Array(ids[1...3]))
+        store.hide(marked)
+        precondition(store.navigableIDs == [ids[0], ids[4]] && !store.hasMarks && store.selectedID == ids[4],
+                     "Archiving the marked chats leaves the rest, with the selection where they were")
+        precondition(store.undoHide() && store.navigableIDs == ids, "One Undo brings all of them back")
+
+        // Later takes them the same way, and in Later the same key sends them back.
+        store.selectedID = ids[0]
+        store.extendMarks(by: 1)
+        precondition(store.toggleLater(store.markedSessions) == true && store.navigableIDs == Array(ids[2...]))
+        store.setFilter(.later)
+        precondition(Set(store.navigableIDs) == Set(ids[0...1]) && store.canMark)
+        store.selectedID = store.navigableIDs.first
+        store.extendMarks(by: 1)
+        precondition(store.hasMarks && store.toggleLater(store.markedSessions) == false && store.navigableIDs.isEmpty)
+        precondition(store.undoHide() && Set(store.navigableIDs) == Set(ids[0...1]), "One Undo puts both back in Later")
+        precondition(store.toggleLater(store.shownRows.map(\.session)) == false)
+
+        // Marks belong to triage: none in Favorites, in search, in the number picker or under the palette.
+        store.setFilter(.favorites)
+        precondition(!store.canMark)
+        store.setFilter(.all)
+        store.selectedID = ids[2]
+        store.extendMarks(by: 1)
+        precondition(store.hasMarks)
+        store.setQuery("marked")
+        precondition(!store.hasMarks && !store.canMark)
+        store.setQuery(nil)
+        store.selectedID = ids[2]
+        store.extendMarks(by: 1)
+        store.numberEntry = ""
+        precondition(!store.hasMarks && !store.canMark)
+        store.numberEntry = nil
+        store.selectedID = ids[2]
+        store.extendMarks(by: 1)
+        store.openPalette()
+        precondition(!store.hasMarks && !store.canMark)
+        store.closePalette()
+        store.selectedID = ids[2]
+        store.extendMarks(by: 1)
+        store.setFilter(.later)
+        precondition(!store.hasMarks, "Another list starts without marks")
     }
 
     /// The pointer's place decides which row it is on, from where the rows say they are. Only the pointer

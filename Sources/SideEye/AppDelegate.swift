@@ -58,6 +58,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         overlay.onOpen = { [weak self] in self?.open($0) }
         overlay.onHide = { [weak self] in self?.hide($0) }
         overlay.onLater = { [weak self] in self?.toggleLater($0) }
+        overlay.onHideMarked = { [weak self] in self?.hide($0) }
+        overlay.onLaterMarked = { [weak self] in self?.toggleLater($0) }
         overlay.onShowWelcome = { [weak self] in self?.showWelcome() }
         overlay.onQuit = { NSApp.terminate(nil) }
         overlay.onRestoreArchived = { [weak self] in self?.restoreArchived($0) }
@@ -289,6 +291,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let deferred = store.toggleLater(session) else { return }
         overlay?.report(deferred ? "Moved “\(session.title)” to Later" : "Moved “\(session.title)” back to the Inbox",
                         undoable: true)
+    }
+
+    /// Several marked chats at once, as one step that Undo takes back.
+    private func hide(_ sessions: [Session]) {
+        store.hide(sessions)
+        overlay?.clearAttentionNudge()
+        overlay?.report("Archived \(sessions.count) chats", undoable: true)
+    }
+
+    private func toggleLater(_ sessions: [Session]) {
+        guard let deferred = store.toggleLater(sessions) else { return }
+        overlay?.report(deferred ? "Moved \(sessions.count) chats to Later"
+                                 : "Moved \(sessions.count) chats back to the Inbox", undoable: true)
     }
 
     private func restoreArchived(_ session: Session) {

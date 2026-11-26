@@ -47,6 +47,7 @@ extension SessionStore {
     }
 
     func openPalette(choosingLater: Bool = false) {
+        clearMarks()
         let target = shownRows.first { $0.id == selectedID }?.id
         palette = PaletteState(targetID: target, choosingLater: choosingLater && target != nil)
     }
