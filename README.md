@@ -32,7 +32,7 @@ A copy you build this way gets its summaries a little differently; see [Build an
 
 ## First run
 
-Side Eye has no Dock icon. It lives in the menu bar and as a small pill on the right edge of your screen. The first time you open it, a welcome window shows which apps it found, how to open the sidebar and what its three statuses mean. You can reopen it from the menu bar icon under **Welcome to Side Eye…**.
+Side Eye has no Dock icon. It lives in the menu bar and as a small pill on the right edge of your screen. The first time you open it, a welcome window shows which apps it found, how to open the sidebar and what its three statuses mean. It comes back at each launch until you close it, and you can reopen it any time from the menu bar icon under **Welcome to Side Eye…**.
 
 - Hover the pill, or press ⌃⌥Space from any app, to open the sidebar.
 - Side Eye opens at login from its first launch, so it is back after a restart. Untick **Open Side Eye at login** in the welcome window, or turn off **Open at login** in Settings, to stop that.

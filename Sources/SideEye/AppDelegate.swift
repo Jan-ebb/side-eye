@@ -150,14 +150,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.makeKey()
     }
 
-    /// Opens the welcome window once, for someone who has never run Side Eye. Saved history means they have.
-    /// Side Eye also starts opening at login from then on; the welcome window's checkbox shows it and undoes it.
+    /// Shows the welcome window to someone who has never run Side Eye, at every launch until they close
+    /// it. From their first launch Side Eye also opens at login; the window's checkbox shows that and
+    /// undoes it.
     private func showWelcomeOnFirstRun() {
-        guard defaults.object(forKey: "welcomeSeen") == nil else { return }
-        defaults.set(true, forKey: "welcomeSeen")
-        guard defaults.object(forKey: "sessionHistory") == nil else { return }
-        preferences.openAtLoginForNewUser()
-        showWelcome()
+        let launch = FirstLaunch.begin(in: defaults)
+        if launch.isNewUser { preferences.openAtLoginForNewUser() }
+        if launch.showsWelcome { showWelcome() }
     }
 
     @objc private func showWelcome() {
@@ -170,6 +169,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                   backing: .buffered, defer: false)
             window.title = "Welcome to Side Eye"
             window.isReleasedWhenClosed = false
+            // No opening animation: it does not run while the display is asleep, which is when a login
+            // item starts.
+            window.animationBehavior = .none
+            NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window,
+                                                   queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.welcomeClosed() }
+            }
             window.contentViewController = NSHostingController(rootView: WelcomeView(
                 model: preferences, store: store,
                 showSideEye: { [weak self] in self?.overlay?.show(keyboard: true) },
@@ -184,6 +190,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // person is looking at.
         welcomeWindow?.orderFrontRegardless()
         welcomeWindow?.makeKey()
+    }
+
+    /// Closing the welcome window, with its button or the red one, is what counts as having seen it.
+    private func welcomeClosed() {
+        if !fixtureMode { FirstLaunch.welcomeClosed(in: defaults) }
     }
 
     private func performPreferenceAction(_ action: PreferencesModel.Action) {

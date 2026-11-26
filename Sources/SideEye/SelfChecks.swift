@@ -117,6 +117,7 @@ enum SelfChecks {
         checkDetailLines(now: now)
         checkOpenAtLogin()
         checkSummaryModelDownload()
+        checkFirstLaunch()
 
         let ordered = SessionStore(defaults: nil)
         let older = sample("older", .codex, "Older completion", .ready, now,
@@ -358,6 +359,28 @@ enum SelfChecks {
                      "A download macOS runs from a temporary copy should not register that copy")
         precondition(!PreferencesModel.canOpenAtLogin(from: "/Users/sam/side-eye/.build/debug"),
                      "A development build has no app to open at login")
+    }
+
+    /// A newcomer gets the welcome window at every launch until they have closed it once.
+    private static func checkFirstLaunch() {
+        let suite = "side-eye.first-launch-check.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else { preconditionFailure("Missing test preferences") }
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let first = FirstLaunch.begin(in: defaults)
+        precondition(first.showsWelcome && first.isNewUser, "A first launch should welcome a newcomer")
+        defaults.set(Data([1]), forKey: "sessionHistory")
+        let second = FirstLaunch.begin(in: defaults)
+        precondition(second.showsWelcome, "A welcome nobody closed should come back at the next launch")
+        precondition(!second.isNewUser, "Only the very first launch turns on Open at login")
+        FirstLaunch.welcomeClosed(in: defaults)
+        precondition(!FirstLaunch.begin(in: defaults).showsWelcome, "A closed welcome should stay closed")
+
+        let earlierSuite = "side-eye.first-launch-check.\(UUID().uuidString)"
+        guard let earlier = UserDefaults(suiteName: earlierSuite) else { preconditionFailure("Missing test preferences") }
+        defer { earlier.removePersistentDomain(forName: earlierSuite) }
+        earlier.set(Data([1]), forKey: "sessionHistory")
+        let upgraded = FirstLaunch.begin(in: earlier)
+        precondition(!upgraded.showsWelcome && !upgraded.isNewUser, "Someone with saved chats is not new")
     }
 
     /// A downloaded model is kept only if it is byte for byte the expected file, and getting one turns

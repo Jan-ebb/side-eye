@@ -1,5 +1,31 @@
 import SwiftUI
 
+/// What a launch owes a newcomer: the welcome window, on every launch until they have closed it once.
+/// A first launch can pass unseen, with the screen locked or the app replaced a moment later, so being
+/// shown does not count as being seen.
+enum FirstLaunch {
+    private static let handledKey = "welcomeSeen"
+    private static let pendingKey = "welcomePending"
+
+    /// Call once per launch. `isNewUser` is true only on the very first launch of someone with no saved
+    /// chats; history from before the welcome window existed means they are not new.
+    static func begin(in defaults: UserDefaults) -> (showsWelcome: Bool, isNewUser: Bool) {
+        var isNewUser = false
+        if defaults.object(forKey: handledKey) == nil {
+            defaults.set(true, forKey: handledKey)
+            if defaults.object(forKey: "sessionHistory") == nil {
+                defaults.set(true, forKey: pendingKey)
+                isNewUser = true
+            }
+        }
+        return (defaults.bool(forKey: pendingKey), isNewUser)
+    }
+
+    static func welcomeClosed(in defaults: UserDefaults) {
+        defaults.removeObject(forKey: pendingKey)
+    }
+}
+
 /// What a new person sees on first launch: what Side Eye found, how to open it, and the little there
 /// is to learn. It reuses the Settings rows, so anything shown here looks the same there.
 struct WelcomeView: View {
