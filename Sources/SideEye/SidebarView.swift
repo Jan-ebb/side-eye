@@ -492,6 +492,8 @@ struct SidebarView: View {
     var archiveRead: () -> Void = {}
     var runPalette: (PaletteEntry) -> Void = { _ in }
     var onHighlightRow: ((String) -> Void)? = nil
+    /// Where the pointer is. The sidebar's window feeds it; a view drawn off screen has one that never moves.
+    @ObservedObject var pointer = PointerTracker()
     var drawsSurface = true
     var presentation = 0
 
@@ -574,6 +576,7 @@ struct SidebarView: View {
         .clipShape(shape)
         .onChange(of: presentation) { hoveredRowID = nil }
         .onChange(of: store.filter) { hoveredRowID = nil }
+        .onChange(of: pointer.region) { old, new in pointerMoved(from: old, to: new) }
         .foregroundStyle(colors.primary)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Side Eye chats")
@@ -841,6 +844,7 @@ struct SidebarView: View {
                 .padding(.bottom, OverlayMetrics.listInset)
             }
             .scrollBounceBehavior(.basedOnSize)
+            .pointerViewport(in: pointer)
             // A permanent scroll bar (mouse attached, or "always show") takes a gutter that cuts the group
             // bands short of the edge. Row numbers and pinned bands already say where you are.
             .scrollIndicators(.never)
@@ -879,11 +883,12 @@ struct SidebarView: View {
                           toggleFavorite: { togglePin(row.session) },
                           jumping: jumping, searching: store.isSearching,
                           keyboardSelected: keyboardSelected, selected: keyboardSelected || pointerSelected,
+                          hovered: hoveredRowID == row.id,
                           showsMainChip: isMain && (jumping || store.showsAllSummaries),
                           isMain: isMain, colors: colors, now: now, numberWidth: numberWidth,
                           actionHelp: hasActions ? "E Archive · L \(laterActionLabel)" : nil,
-                          activate: { open(row.session) },
-                          hover: { hoverRow(row.id, entered: $0) })
+                          activate: { open(row.session) })
+            .pointerRegion(.row(row.id), in: pointer)
             .contextMenu { rowMenu(row, isMain: isMain) }
             // No .id(row.id) here: ForEach already identifies rows by their ID, which is what scrollTo uses. A
             // second explicit ID made the lazy list keep old drawings of rows that moved to another section.
@@ -940,6 +945,8 @@ struct SidebarView: View {
             .overlay(alignment: .bottom) { colors.divider.frame(height: 1).opacity(0.7) }
         }
         .padding(.horizontal, -OverlayMetrics.listInset)
+        // Pinned, it lies over the rows that scroll beneath it.
+        .pointerRegion(.cover(group.headerID), in: pointer)
         .id(group.headerID)
     }
 
@@ -956,6 +963,22 @@ struct SidebarView: View {
         .padding(.leading, OverlayMetrics.rowInset)
         .frame(height: OverlayMetrics.allClearHeight)
         .accessibilityElement(children: .combine)
+    }
+
+    /// The pointer went from one row or palette entry to another.
+    private func pointerMoved(from old: PointerRegion?, to new: PointerRegion?) {
+        if case .row(let id) = old { hoverRow(id, entered: false) }
+        switch new {
+        case .row(let id):
+            hoverRow(id, entered: true)
+        case .paletteEntry(let index):
+            if var state = store.palette, state.index != index {
+                state.index = index
+                store.palette = state
+            }
+        case .cover, nil:
+            break
+        }
     }
 
     private func hoverRow(_ id: String, entered: Bool) {
@@ -1256,6 +1279,7 @@ struct SidebarView: View {
                     .padding(OverlayMetrics.listInset)
                 }
                 .scrollBounceBehavior(.basedOnSize)
+                .pointerViewport(in: pointer)
                 .onChange(of: selectedID, initial: true) { _, id in
                     if let id { proxy.scrollTo(id) }
                 }
@@ -1307,12 +1331,7 @@ struct SidebarView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .onHover { inside in
-            if inside, var state = store.palette, state.index != index {
-                state.index = index
-                store.palette = state
-            }
-        }
+        .pointerRegion(.paletteEntry(index), in: pointer)
         .accessibilityLabel(entry.title)
         .accessibilityValue([entry.state, entry.detail, entry.key.map { "Shortcut \($0)" }].compactMap { $0 }
             .joined(separator: ", "))
@@ -1355,6 +1374,8 @@ private struct SidebarRow: View {
     let searching: Bool
     let keyboardSelected: Bool
     let selected: Bool
+    /// The pointer is on this row.
+    let hovered: Bool
     let showsMainChip: Bool
     let isMain: Bool
     let colors: OverlayColors
@@ -1362,10 +1383,8 @@ private struct SidebarRow: View {
     let numberWidth: CGFloat
     let actionHelp: String?
     let activate: () -> Void
-    let hover: (Bool) -> Void
 
     @Environment(\.colorSchemeContrast) private var contrast
-    @State private var hovered = false
 
     private var session: Session { row.session }
     private var showsStar: Bool { hovered && canFavorite }
@@ -1469,10 +1488,6 @@ private struct SidebarRow: View {
                 .help(isFavorite ? "Unfavorite (F)" : "Favorite (F)")
                 .accessibilityLabel(isFavorite ? "Unfavorite" : "Favorite")
             }
-        }
-        .onHover { inside in
-            hovered = inside
-            hover(inside)
         }
         .help([session.title, session.source.name, session.detail, isMain ? "Main Grok Bot agent" : nil, row.stateTitle,
                row.stateDescription, row.timestampDescription, session.stateSummary, keyHelp, actionHelp,

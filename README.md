@@ -110,7 +110,7 @@ Single keys act on the list while the sidebar is open. Letters are commands, so 
 
 | Key | Action |
 | --- | --- |
-| ↑ / ↓, or K / J | Move up or down. They work as soon as the sidebar opens, including on hover. |
+| ↑ / ↓, or K / J | Move up or down. They work as soon as the sidebar opens, including on hover. The pointer selects too: the row under it is the selected one, so the keys and the buttons in the bar act on it. |
 | Return | Open the selected chat. |
 | 1–9 | Open rows 1–9 from top to bottom. |
 | 0 | Jump to any numbered row. Type the number, then press Return. |

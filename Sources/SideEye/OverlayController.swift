@@ -36,20 +36,41 @@ private final class OverlayPanel: NSPanel {
 @MainActor
 private final class HoverHost<Content: View>: NSHostingView<Content> {
     var pointerChanged: ((Bool) -> Void)?
+    /// Where the pointer is over this view, measured from its top-left corner, or nil once it has left.
+    /// The tracking area is always active, so this reports while another app is in front.
+    var pointerMoved: ((CGPoint?) -> Void)?
     private var area: NSTrackingArea?
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let area { removeTrackingArea(area) }
         let updated = NSTrackingArea(rect: .zero,
-                                    options: [.inVisibleRect, .mouseEnteredAndExited, .activeAlways],
+                                    options: [.inVisibleRect, .mouseEnteredAndExited, .mouseMoved, .activeAlways],
                                     owner: self)
         addTrackingArea(updated)
         area = updated
     }
 
-    override func mouseEntered(with event: NSEvent) { pointerChanged?(true) }
-    override func mouseExited(with event: NSEvent) { pointerChanged?(false) }
+    override func mouseEntered(with event: NSEvent) {
+        pointerChanged?(true)
+        report(event)
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        report(event)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        pointerChanged?(false)
+        pointerMoved?(nil)
+    }
+
+    private func report(_ event: NSEvent) {
+        guard let pointerMoved else { return }
+        let point = convert(event.locationInWindow, from: nil)
+        pointerMoved(CGPoint(x: point.x, y: isFlipped ? point.y : bounds.height - point.y))
+    }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
@@ -98,6 +119,9 @@ final class OverlayController {
     private var menuTokens: [NSObjectProtocol] = []
     private var mouseMonitor: Any?
     private var localMouseMonitor: Any?
+    private var scrollMonitor: Any?
+    /// Which row or palette entry the pointer is on.
+    let pointer = PointerTracker()
     private var menuTrackingDepth = 0
     private var blockHoverUntil = Date.distantPast
     private var keyboardPinned = false
@@ -155,10 +179,13 @@ final class OverlayController {
                                archiveRead: { [weak self] in self?.onArchiveRead?() },
                                runPalette: { [weak self] in self?.runPaletteEntry($0) },
                                onHighlightRow: { [weak self] in self?.highlightRow($0) },
+                               pointer: pointer,
                                drawsSurface: false)
         let sidebarContent = HoverHost(rootView: list)
         sidebarContent.wantsLayer = true
         sidebarContent.pointerChanged = { [weak self] entered in self?.pointerChanged(entered) }
+        sidebarContent.pointerMoved = { [weak self] point in self?.pointer.move(to: point) }
+        pointer.showsPalette = { [weak self] in self?.store.palette != nil }
         sidebar.contentView = sidebarContent
         sidebar.hasShadow = false
         sidebarMask.backgroundColor = NSColor.black.cgColor
@@ -354,6 +381,7 @@ final class OverlayController {
         keyboardPinned = false
         keyboardSelectionLocation = nil
         store.keyboardMode = false
+        pointer.move(to: nil)
         sidebar.acceptsKeyboard = false
         sidebar.orderOut(nil)
         clearContentReveal()
@@ -543,6 +571,40 @@ final class OverlayController {
         onOpen = { openedID = $0.id }
         sendTestKey("\r", code: 36)
         precondition(openedID == rows[selection].id, "Return should open the hover selection")
+    }
+
+    /// The row under the pointer becomes the selected one. The move is handed to the sidebar's view the
+    /// way its window hands it one, so the check needs no real pointer.
+    func checkPointerSelection() async {
+        precondition(isShowing, "The pointer check needs the sidebar open")
+        let rows = store.shownRows
+        guard let host = sidebar.contentView as? HoverHost<SidebarView>,
+              let other = rows.first(where: { $0.id != store.selectedID && pointer.frame(for: .row($0.id)) != nil }),
+              let place = pointer.frame(for: .row(other.id)) else {
+            preconditionFailure("No row said where it is, so the pointer could select nothing")
+        }
+        let wasFollowing = followsPointer, selectedBefore = store.selectedID
+        followsPointer = true
+        keyboardSelectionLocation = nil
+        defer {
+            followsPointer = wasFollowing
+            pointer.move(to: nil)
+            store.selectedID = selectedBefore
+        }
+        func point(at place: CGRect) {
+            let inWindow = NSPoint(x: place.midX, y: host.bounds.height - place.midY)
+            guard let event = NSEvent.mouseEvent(with: .mouseMoved, location: inWindow, modifierFlags: [],
+                                                 timestamp: ProcessInfo.processInfo.systemUptime,
+                                                 windowNumber: sidebar.windowNumber, context: nil, eventNumber: 0,
+                                                 clickCount: 0, pressure: 0) else {
+                preconditionFailure("Could not make a pointer move")
+            }
+            host.mouseMoved(with: event)
+        }
+        point(at: place)
+        try? await Task.sleep(for: .milliseconds(120))
+        precondition(pointer.region == .row(other.id), "The sidebar should know which row the pointer is on")
+        precondition(store.selectedID == other.id, "The row under the pointer should become the selected one")
     }
 
     func checkLayoutAndKeyInput() {
@@ -783,6 +845,19 @@ final class OverlayController {
         postKey(126)
         try? await Task.sleep(for: .milliseconds(120))
         guard store.selectedID == rows[selected].id else { return false }
+
+        // The pointer selects the row it is on, so the keys and the bar under the list act on that row.
+        guard let other = rows.first(where: { $0.id != store.selectedID && pointer.frame(for: .row($0.id)) != nil }),
+              let place = pointer.frame(for: .row(other.id)) else {
+            print("Hover fixture: no row said where it is.")
+            return false
+        }
+        move(CGPoint(x: sidebar.frame.minX + place.midX, y: sidebar.frame.maxY - place.midY))
+        try? await Task.sleep(for: .milliseconds(140))
+        guard store.selectedID == other.id, !store.keyboardMode else {
+            print("Hover fixture: the row under the pointer was not selected (\(store.selectedID ?? "none"), wanted \(other.id)).")
+            return false
+        }
 
         let outside = CGPoint(x: sidebar.frame.minX - 12, y: rail.frame.midY)
         move(outside)
@@ -1459,13 +1534,22 @@ final class OverlayController {
                 return event
             }
         }
+        // Scrolling moves the rows under the pointer without moving the pointer.
+        if scrollMonitor == nil {
+            scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+                MainActor.assumeIsolated { self?.pointer.scrolled() }
+                return event
+            }
+        }
     }
 
     private func removeClickMonitors() {
         if let mouseMonitor { NSEvent.removeMonitor(mouseMonitor) }
         if let localMouseMonitor { NSEvent.removeMonitor(localMouseMonitor) }
+        if let scrollMonitor { NSEvent.removeMonitor(scrollMonitor) }
         mouseMonitor = nil
         localMouseMonitor = nil
+        scrollMonitor = nil
     }
 
     private func closeOnOutsideClick() {

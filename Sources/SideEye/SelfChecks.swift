@@ -118,6 +118,7 @@ enum SelfChecks {
         checkOpenAtLogin()
         checkSummaryNote(now: now)
         checkUpdates(now: now)
+        checkPointerTracker(now: now)
         checkSummaryModelDownload()
         checkFirstLaunch()
 
@@ -557,6 +558,60 @@ enum SelfChecks {
         bare.startUpdateChecks(now: now.addingTimeInterval(30 * day))
         settle()
         precondition(bare.update == nil)
+    }
+
+    /// The pointer's place decides which row it is on, from where the rows say they are. Only the pointer
+    /// moving, or a scroll, changes that.
+    private static func checkPointerTracker(now: Date) {
+        let tracker = PointerTracker()
+        let list = UUID(), palette = UUID()
+        func row(_ top: CGFloat) -> CGRect { CGRect(x: 0, y: top, width: 400, height: 30) }
+        tracker.setViewport(CGRect(x: 0, y: 40, width: 400, height: 200), owner: list)
+        tracker.setFrame(row(40), for: .row("one"), owner: list, now: now)
+        tracker.setFrame(row(70), for: .row("two"), owner: list, now: now)
+        precondition(tracker.region == nil, "Rows saying where they are point at nothing")
+        tracker.move(to: CGPoint(x: 50, y: 50))
+        precondition(tracker.region == .row("one"))
+        tracker.move(to: CGPoint(x: 50, y: 80))
+        precondition(tracker.region == .row("two"))
+
+        tracker.setFrame(row(70), for: .row("one"), owner: list, now: now)
+        tracker.setFrame(row(100), for: .row("two"), owner: list, now: now)
+        precondition(tracker.region == .row("two"), "A list that shifts under a resting pointer selects nothing")
+        tracker.scrolled(at: now)
+        tracker.setFrame(row(70), for: .row("one"), owner: list, now: now.addingTimeInterval(0.1))
+        precondition(tracker.region == .row("one"), "After a scroll the row now under the pointer counts")
+        tracker.setFrame(row(100), for: .row("two"), owner: list, now: now.addingTimeInterval(5))
+        precondition(tracker.region == .row("one"))
+
+        tracker.setFrame(row(230), for: .row("three"), owner: list, now: now)
+        tracker.move(to: CGPoint(x: 50, y: 245))
+        precondition(tracker.region == nil, "A row scrolled out under the bar cannot be pointed at")
+        tracker.setFrame(CGRect(x: 0, y: 70, width: 400, height: 24), for: .cover("header"), owner: list, now: now)
+        tracker.move(to: CGPoint(x: 50, y: 80))
+        precondition(tracker.region == nil, "A pinned header covers the row beneath it")
+        tracker.move(to: CGPoint(x: 50, y: 97))
+        precondition(tracker.region == .row("one"))
+
+        var showsPalette = false
+        tracker.showsPalette = { showsPalette }
+        tracker.setFrame(row(70), for: .paletteEntry(2), owner: palette, now: now)
+        tracker.move(to: CGPoint(x: 50, y: 96))
+        precondition(tracker.region == .row("one"), "Without the palette its entries are not there to point at")
+        showsPalette = true
+        tracker.move(to: CGPoint(x: 50, y: 80))
+        precondition(tracker.region == .paletteEntry(2), "With the palette open, only its entries are")
+        tracker.setFrame(nil, for: .paletteEntry(2), owner: list, now: now)
+        tracker.move(to: CGPoint(x: 50, y: 81))
+        precondition(tracker.region == .paletteEntry(2), "Only the view that reported a place can take it away")
+        tracker.setFrame(nil, for: .paletteEntry(2), owner: palette, now: now)
+        tracker.move(to: CGPoint(x: 50, y: 80))
+        precondition(tracker.region == nil)
+        showsPalette = false
+        tracker.move(to: CGPoint(x: 50, y: 97))
+        precondition(tracker.region == .row("one"))
+        tracker.move(to: nil)
+        precondition(tracker.region == nil, "A pointer that has left is on nothing")
     }
 
     private static func checkFirstLaunch() {
@@ -1429,6 +1484,7 @@ enum SelfChecks {
             precondition(overlay.isShowing && store.keyboardMode && store.selectedID == "two")
             overlay.checkLayoutAndKeyInput()
             overlay.checkSidebarDensity()
+            await overlay.checkPointerSelection()
             await overlay.checkTabSwitchRedraw(previewDirectory: previewDirectory)
             overlay.checkArchiveKeys()
             precondition(!store.showsAllSummaries, "The default preview should show Compact")
