@@ -116,6 +116,7 @@ enum SelfChecks {
         checkClosedCodexDatabases(now: now)
         checkDetailLines(now: now)
         checkOpenAtLogin()
+        checkSummaryNote(now: now)
         checkSummaryModelDownload()
         checkFirstLaunch()
 
@@ -369,6 +370,29 @@ enum SelfChecks {
         let file = FileManager.default.homeDirectoryForCurrentUser
             .appending(path: "Library/Preferences/\(suite).plist")
         try? FileManager.default.removeItem(at: file)
+    }
+
+    /// With previews on and no summary model, the sidebar says so until the person hides the note.
+    private static func checkSummaryNote(now: Date) {
+        let store = SessionStore(defaults: nil)
+        store.ingest([sample("note", .codex, "Sample chat", .working, now)])
+        let plain = OverlayMetrics.sidebarHeight(for: store)
+        store.summaryModelMissing = true
+        precondition(!store.showsSummaryNote && OverlayMetrics.sidebarHeight(for: store) == plain,
+                     "Without previews there is nothing to explain")
+        store.setShowsAllSummaries(true)
+        let previews = OverlayMetrics.sidebarHeight(for: store)
+        precondition(store.showsSummaryNote, "Previews without the model should say that it is not installed")
+        store.summaryModelMissing = false
+        precondition(!store.showsSummaryNote
+                     && previews - OverlayMetrics.sidebarHeight(for: store) == OverlayMetrics.summaryNoteHeight,
+                     "The note should take its own height and go once the model is there")
+        store.summaryModelMissing = true
+        store.setQuery("sample")
+        precondition(!store.showsSummaryNote, "Search has no room for the note")
+        store.setQuery(nil)
+        store.hideSummaryNote()
+        precondition(!store.showsSummaryNote, "A hidden note should stay hidden")
     }
 
     /// A newcomer gets the welcome window at every launch until they have closed it once.

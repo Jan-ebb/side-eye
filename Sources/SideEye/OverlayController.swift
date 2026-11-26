@@ -116,6 +116,7 @@ final class OverlayController {
     private var sendingTestKey = false
     var onUndo: (() -> Void)?
     var onShowSettings: (() -> Void)?
+    var onShowSummarySettings: (() -> Void)?
 
     var isShowing: Bool { sidebar.isVisible }
     var isNudging: Bool { nudge.isVisible }
@@ -142,6 +143,7 @@ final class OverlayController {
         let list = SidebarView(store: store, open: { [weak self] in self?.onOpen?($0) },
                                hide: { [weak self] in self?.onHide?($0) },
                                showMenu: { [weak self] in self?.onShowSettings?() },
+                               showSummarySettings: { [weak self] in self?.onShowSummarySettings?() },
                                jump: { [weak self] in self?.jumpByNumber() },
                                search: { [weak self] in self?.beginSearch() },
                                toggleLater: { [weak self] in self?.onLater?($0) },

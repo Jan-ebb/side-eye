@@ -62,6 +62,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         overlay.onArchiveRead = { [weak self] in self?.archiveRead() }
         overlay.onUndo = { [weak self] in self?.undoHide() }
         overlay.onShowSettings = { [weak self] in self?.showSettings() }
+        overlay.onShowSummarySettings = { [weak self] in
+            self?.preferences.selection = .general
+            self?.showSettings()
+        }
         preferences.onEdgeVisibility = { [weak overlay] in overlay?.setEdgeVisible($0) }
         preferences.onMuteNudges = { [weak overlay] in overlay?.clearAttentionNudge() }
         preferences.onAction = { [weak self] in self?.performPreferenceAction($0) }

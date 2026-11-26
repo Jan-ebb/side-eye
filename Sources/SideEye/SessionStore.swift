@@ -98,6 +98,10 @@ final class SessionStore: ObservableObject {
     @Published private var searchQuery: String?
     @Published private(set) var filter: SessionFilter = .all
     @Published private(set) var showsAllSummaries: Bool
+    /// True while the summary model is not on this Mac. With previews on, the sidebar then says so and
+    /// points to Settings, until the person hides that note.
+    @Published var summaryModelMissing = false
+    @Published private(set) var summaryNoteHidden = false
     /// Favorites, in the order they were added. They stay in their groups in the Inbox and have their own tab.
     @Published private(set) var pinnedIDs: [String]
     @Published private(set) var showsAutomationRuns: Bool
@@ -305,6 +309,18 @@ final class SessionStore: ObservableObject {
         onRowsChanged?()
     }
 
+    /// Whether the sidebar should say that summaries are not installed: only where the previews are,
+    /// which without the model can say no more than where each chat runs.
+    var showsSummaryNote: Bool {
+        summaryModelMissing && !summaryNoteHidden && showsAllSummaries && palette == nil && numberEntry == nil
+            && !isSearching && filter != .archive
+    }
+
+    func hideSummaryNote() {
+        summaryNoteHidden = true
+        defaults?.set(true, forKey: "summaryNoteHidden")
+    }
+
     func setShowsAllSummaries(_ value: Bool) {
         guard value != showsAllSummaries else { return }
         showsAllSummaries = value
@@ -382,6 +398,7 @@ final class SessionStore: ObservableObject {
     init(defaults: UserDefaults? = .standard) {
         self.defaults = defaults
         showsAllSummaries = defaults?.bool(forKey: Self.briefingPreferenceKey) ?? false
+        summaryNoteHidden = defaults?.bool(forKey: "summaryNoteHidden") ?? false
         pinnedIDs = defaults?.stringArray(forKey: Self.pinnedPreferenceKey) ?? []
         showsAutomationRuns = defaults?.bool(forKey: Self.automationRunsPreferenceKey) ?? false
         grokMainOnly = defaults?.bool(forKey: "grokMainAgentsOnly") ?? false

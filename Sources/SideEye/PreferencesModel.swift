@@ -42,7 +42,7 @@ final class PreferencesModel: ObservableObject {
     }
     @Published private(set) var launchAtLogin = false
     /// Where the summary model stands on this Mac.
-    @Published private(set) var summaryModel: SummaryModelState = .missing
+    @Published private(set) var summaryModel: SummaryModelState = .missing { didSet { syncSummaryNote() } }
     /// Whether llama.cpp, the program that runs the model, is installed.
     @Published private(set) var hasSummaryServer = false
     @Published private(set) var sourceEnabled: [Source: Bool]
@@ -86,6 +86,18 @@ final class PreferencesModel: ObservableObject {
     }
 
     var canRemoveSummaryModel: Bool { summaryModelFile.isRemovable }
+
+    /// Tells the sidebar whether to say that summaries are not installed. A model on its way does not
+    /// count as missing. Checks, which have no settings, leave the sidebar alone.
+    private func syncSummaryNote() {
+        guard defaults != nil else { return }
+        let missing: Bool
+        switch summaryModel {
+        case .missing, .failed: missing = true
+        case .downloading, .checking, .ready: missing = false
+        }
+        if store.summaryModelMissing != missing { store.summaryModelMissing = missing }
+    }
 
     /// Fetches the model. Only ever called from a button that names the download and its size.
     func downloadSummaryModel() {

@@ -141,7 +141,7 @@ To give a chat Side Eye does not find a row of its own, choose **Add chat link�
 With summaries on, Side Eye writes one sentence per chat about the latest request, the result and any next action. It shows in previews, on hover and in nudges. Summaries are optional and off until you ask for them.
 
 - **Getting them.** Press **Install** under **Settings → General**, or in the welcome window. Side Eye fetches the model, 1.1 GB from Hugging Face, checks it against a published SHA-256 and keeps it in `~/Library/Application Support/Side Eye/Models`. A file that fails the check is deleted. Settings can remove the model again.
-- **Without the model.** Settings marks it **Not installed**.
+- **Without the model.** Settings marks it **Not installed**. With previews on, the sidebar says so too, in a note at the top with an **Install…** button that opens Settings. Close the note and it stays away.
 - **Where they run.** On your Mac, on [llama.cpp](https://github.com/ggml-org/llama.cpp), which the release download carries inside the app. Side Eye starts it only when needed, talks to it over a private Unix socket and shuts it down when idle.
 - **What they read.** Bounded excerpts from the apps’ local caches. Summaries are kept in memory only. Where a recent transcript is absent, a row relies on what its app reports.
 - **The first one is slow.** The very first summary on a Mac takes about 15 seconds longer on Apple silicon, while macOS prepares the model’s GPU code. After that it is cached.

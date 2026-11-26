@@ -34,6 +34,7 @@ enum OverlayMetrics {
     static let filterHeight: CGFloat = 31
     static let jumpBarHeight: CGFloat = 35
     static let footerHeight: CGFloat = 32
+    static let summaryNoteHeight: CGFloat = 54
     static let emptyHeight: CGFloat = 88
     static let maxListHeight: CGFloat = 470
     static let maxBriefingListHeight: CGFloat = 560
@@ -136,7 +137,7 @@ enum OverlayMetrics {
             let filters = store.filter == .archive ? 0 : filterHeight
             return headerHeight + filters + list + footerHeight + 2
         }
-        return compactToolbarHeight + list + footerHeight + 2
+        return compactToolbarHeight + (store.showsSummaryNote ? summaryNoteHeight : 0) + list + footerHeight + 2
     }
 }
 
@@ -480,6 +481,7 @@ struct SidebarView: View {
     let open: (Session) -> Void
     let hide: (Session) -> Void
     let showMenu: () -> Void
+    var showSummarySettings: () -> Void = {}
     let jump: () -> Void
     let search: () -> Void
     let toggleLater: (Session) -> Void
@@ -526,6 +528,7 @@ struct SidebarView: View {
                         .overlay(alignment: .bottom) { hairline }
                 } else {
                     compactToolbar
+                    if store.showsSummaryNote { summaryNote }
                 }
             } else {
                 header
@@ -622,6 +625,51 @@ struct SidebarView: View {
         }
         .padding(.horizontal, 9)
         .frame(height: OverlayMetrics.compactToolbarHeight)
+        .overlay(alignment: .bottom) { hairline }
+    }
+
+    /// With previews on and no summary model on this Mac, the line under a chat can only say where it
+    /// runs. This says why and leads to the place where the model is installed.
+    private var summaryNote: some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Local model not installed")
+                    .font(.system(size: 13, weight: .semibold))
+                Text("Install it to see what each agent is doing.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(colors.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.9)
+            }
+            .accessibilityElement(children: .combine)
+            Spacer(minLength: 0)
+            Button(action: showSummarySettings) {
+                Text("Install…")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(colors.surface)
+                    .padding(.horizontal, 11)
+                    .frame(height: 24)
+                    .background(colors.primary, in: Capsule())
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .help("Open Settings, where the model is installed")
+            .accessibilityLabel("Install the local model in Settings")
+            Button(action: store.hideSummaryNote) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(colors.tertiary)
+                    .frame(width: 20, height: 24)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Hide this note")
+            .accessibilityLabel("Hide this note")
+        }
+        .padding(.leading, 13)
+        .padding(.trailing, 7)
+        .frame(height: OverlayMetrics.summaryNoteHeight)
+        .background(colors.inset)
         .overlay(alignment: .bottom) { hairline }
     }
 
