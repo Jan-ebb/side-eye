@@ -58,6 +58,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         overlay.onOpen = { [weak self] in self?.open($0) }
         overlay.onHide = { [weak self] in self?.hide($0) }
         overlay.onLater = { [weak self] in self?.toggleLater($0) }
+        overlay.onShowWelcome = { [weak self] in self?.showWelcome() }
+        overlay.onQuit = { NSApp.terminate(nil) }
         overlay.onRestoreArchived = { [weak self] in self?.restoreArchived($0) }
         overlay.onArchiveRead = { [weak self] in self?.archiveRead() }
         overlay.onUndo = { [weak self] in self?.undoHide() }

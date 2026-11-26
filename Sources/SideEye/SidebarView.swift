@@ -615,7 +615,7 @@ struct SidebarView: View {
                 headerButton("Cancel search", icon: "xmark.circle") { store.setQuery(nil) }
             }
             if !jumping && !browsingArchive { summaryToggle }
-            headerButton("Settings", icon: "ellipsis", action: showMenu)
+            moreButton
         }
         .padding(.horizontal, browsingArchive && !store.isSearching && !jumping ? 9 : 13)
     }
@@ -625,7 +625,7 @@ struct SidebarView: View {
             filters
             Spacer(minLength: 0)
             summaryToggle
-            headerButton("Settings", icon: "ellipsis", action: showMenu)
+            moreButton
         }
         .padding(.horizontal, 9)
         .frame(height: OverlayMetrics.compactToolbarHeight)
@@ -733,6 +733,12 @@ struct SidebarView: View {
             store.setShowsAllSummaries(!expanded)
         }
         .accessibilityHint(store.isSearching ? "" : "Press D")
+    }
+
+    /// The three dots open a menu, and Quit is in it: Side Eye has no Dock icon to quit from.
+    private var moreButton: some View {
+        headerButton("More", icon: "ellipsis", help: "Settings, Welcome and Quit", action: showMenu)
+            .accessibilityHint("Opens a menu with Settings, Welcome to Side Eye and Quit Side Eye")
     }
 
     private func headerButton(_ title: String, icon: String, help: String? = nil,

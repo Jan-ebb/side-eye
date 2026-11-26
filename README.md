@@ -43,6 +43,7 @@ Once a day Side Eye asks GitHub which release is the newest. When there is a new
 Side Eye has no Dock icon. It lives in the menu bar and as a small pill on the right edge of your screen. The first time you open it, a welcome window shows which apps it found, how to open the sidebar and what its three statuses mean. It comes back at each launch until you close it, and you can reopen it any time from the menu bar icon under **Welcome to Side Eye…**.
 
 - Hover the pill, or press ⌃⌥Space from any app, to open the sidebar.
+- To quit, click the three dots in the sidebar and choose **Quit Side Eye**. The menu bar icon has it too.
 - Side Eye opens at login from its first launch, so it is back after a restart. Untick **Open Side Eye at login** in the welcome window, or turn off **Open at login** in Settings, to stop that.
 - Side Eye needs no permissions to start. Opening a Claude Code chat that runs in a terminal asks for Automation access once, so Side Eye can switch to the right tab.
 - [Summaries](#summaries) are optional. The welcome window and **Settings → General** offer to download the model for them, Qwen3.5-2B, 1.1 GB, once.
@@ -61,7 +62,7 @@ The sidebar has three lists: **Inbox**, **Favorites** and **Later**. Each tab sh
 
 It opens with one line per chat. Press **D** or use the preview button to add a preview under every chat: its latest [summary](#summaries), or where it runs until a summary exists. Press **D** again to hide them all. Side Eye remembers your choice.
 
-Open Settings from the sidebar’s more button or the Side Eye menu bar icon.
+Open Settings from the three dots in the sidebar or from the Side Eye menu bar icon. Both menus also have **Quit Side Eye**.
 
 ### Statuses
 

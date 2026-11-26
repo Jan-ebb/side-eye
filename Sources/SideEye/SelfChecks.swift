@@ -119,6 +119,7 @@ enum SelfChecks {
         checkSummaryNote(now: now)
         checkUpdates(now: now)
         checkPointerTracker(now: now)
+        checkMoreMenu()
         checkSummaryModelDownload()
         checkFirstLaunch()
 
@@ -612,6 +613,20 @@ enum SelfChecks {
         precondition(tracker.region == .row("one"))
         tracker.move(to: nil)
         precondition(tracker.region == nil, "A pointer that has left is on nothing")
+    }
+
+    /// The three dots lead to Settings, the welcome window and Quit.
+    private static func checkMoreMenu() {
+        var chosen: [String] = []
+        let menu = OverlayController.moreMenu(settings: { chosen.append("settings") }, welcome: { chosen.append("welcome") },
+                                              quit: { chosen.append("quit") })
+        precondition(menu.items.map(\.title) == ["Settings…", "Welcome to Side Eye…", "", "Quit Side Eye"]
+                     && menu.items[2].isSeparatorItem, "Quit has to be reachable from the sidebar")
+        for item in menu.items where !item.isSeparatorItem {
+            precondition(item.isEnabled && item.action != nil)
+            NSApp.sendAction(item.action!, to: item.target, from: item)
+        }
+        precondition(chosen == ["settings", "welcome", "quit"])
     }
 
     private static func checkFirstLaunch() {
@@ -1485,6 +1500,7 @@ enum SelfChecks {
             overlay.checkLayoutAndKeyInput()
             overlay.checkSidebarDensity()
             await overlay.checkPointerSelection()
+            await overlay.checkMoreMenuOpens()
             await overlay.checkTabSwitchRedraw(previewDirectory: previewDirectory)
             overlay.checkArchiveKeys()
             precondition(!store.showsAllSummaries, "The default preview should show Compact")

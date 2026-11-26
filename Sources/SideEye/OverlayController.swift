@@ -34,6 +34,22 @@ private final class OverlayPanel: NSPanel {
 }
 
 @MainActor
+/// A menu item that runs a closure, for menus built by something that is not an object AppKit can target.
+final class ClosureMenuItem: NSMenuItem {
+    private let run: () -> Void
+
+    init(_ title: String, run: @escaping () -> Void) {
+        self.run = run
+        super.init(title: title, action: #selector(runClosure), keyEquivalent: "")
+        target = self
+    }
+
+    @available(*, unavailable)
+    required init(coder: NSCoder) { fatalError("Not used") }
+
+    @objc private func runClosure() { run() }
+}
+
 private final class HoverHost<Content: View>: NSHostingView<Content> {
     var pointerChanged: ((Bool) -> Void)?
     /// Where the pointer is over this view, measured from its top-left corner, or nil once it has left.
@@ -130,6 +146,10 @@ final class OverlayController {
 
     var onOpen: ((Session) -> Void)?
     var onHide: ((Session) -> Void)?
+    var onShowWelcome: (() -> Void)?
+    var onQuit: (() -> Void)?
+    /// Puts a menu on screen. The on-screen checks replace it, since a real menu waits for a choice.
+    var presentMenu: (NSMenu, NSPoint) -> Void = { menu, place in menu.popUp(positioning: nil, at: place, in: nil) }
     var onLater: ((Session) -> Void)?
     var onRestoreArchived: ((Session) -> Void)?
     var onArchiveRead: (() -> Void)?
@@ -167,7 +187,7 @@ final class OverlayController {
 
         let list = SidebarView(store: store, open: { [weak self] in self?.onOpen?($0) },
                                hide: { [weak self] in self?.onHide?($0) },
-                               showMenu: { [weak self] in self?.onShowSettings?() },
+                               showMenu: { [weak self] in self?.showMoreMenu() },
                                showSummarySettings: { [weak self] in self?.onShowSummarySettings?() },
                                installUpdate: { [weak self] in self?.onInstallUpdate?() },
                                jump: { [weak self] in self?.jumpByNumber() },
@@ -607,6 +627,22 @@ final class OverlayController {
         precondition(store.selectedID == other.id, "The row under the pointer should become the selected one")
     }
 
+    /// The three dots in the sidebar open their menu, with Quit in it. The menu itself is not shown: a
+    /// real one waits for a choice.
+    func checkMoreMenuOpens() async {
+        guard let host = sidebar.contentView as? HoverHost<SidebarView> else {
+            preconditionFailure("The sidebar should be showing its list")
+        }
+        let originalPresent = presentMenu
+        var offered: [String] = []
+        presentMenu = { menu, _ in offered = menu.items.map(\.title) }
+        host.rootView.showMenu()
+        try? await Task.sleep(for: .milliseconds(60))
+        presentMenu = originalPresent
+        precondition(offered == ["Settings…", "Welcome to Side Eye…", "", "Quit Side Eye"],
+                     "The three dots should open a menu that ends in Quit")
+    }
+
     func checkLayoutAndKeyInput() {
         precondition(sidebar.isKeyWindow, "Keyboard sidebar should become key without activating Side Eye")
         precondition(sidebar.frame.maxX == pillShape(phase: .idle).rect.maxX,
@@ -920,21 +956,22 @@ final class OverlayController {
         guard rail.frame.contains(NSEvent.mouseLocation) else { return nil }
         guard isShowing else { return false }
 
-        // The settings button and the drag start both share the rail's hit area.
+        // The three dots and the drag start both share the rail's hit area. A click on the dots has to
+        // open their menu, with Quit in it, and not begin a drag.
         let headerHeight = OverlayMetrics.compactToolbarHeight
-        let settingsInset: CGFloat = 21
-        let settings = CGPoint(x: sidebar.frame.maxX - OverlayMetrics.sidebarInset - settingsInset,
-                               y: sidebar.frame.maxY - OverlayMetrics.sidebarInset - headerHeight / 2)
-        if rail.frame.contains(settings) {
-            let originalSettings = onShowSettings
-            var openedSettings = false
-            onShowSettings = { openedSettings = true }
-            postMouse(.leftMouseDown, at: settings, primaryTop: primaryTop)
-            postMouse(.leftMouseUp, at: settings, primaryTop: primaryTop)
-            try? await Task.sleep(for: .milliseconds(70))
-            onShowSettings = originalSettings
-            guard openedSettings, railPress == nil else {
-                print("Rail fixture: the sidebar's settings click was intercepted.")
+        let dotsInset: CGFloat = 21
+        let dots = CGPoint(x: sidebar.frame.maxX - OverlayMetrics.sidebarInset - dotsInset,
+                           y: sidebar.frame.maxY - OverlayMetrics.sidebarInset - headerHeight / 2)
+        if rail.frame.contains(dots) {
+            let originalPresent = presentMenu
+            var offered: [String] = []
+            presentMenu = { menu, _ in offered = menu.items.map(\.title) }
+            postMouse(.leftMouseDown, at: dots, primaryTop: primaryTop)
+            postMouse(.leftMouseUp, at: dots, primaryTop: primaryTop)
+            try? await Task.sleep(for: .milliseconds(90))
+            presentMenu = originalPresent
+            guard offered.contains("Quit Side Eye"), railPress == nil else {
+                print("Rail fixture: the click on the sidebar's three dots was intercepted.")
                 return false
             }
             postMouse(.mouseMoved, at: origin, primaryTop: primaryTop)
@@ -1500,6 +1537,31 @@ final class OverlayController {
         case false?: report("Removed “\(session.title)” from Favorites")
         case nil: report("Favorites holds up to \(SessionStore.maxPins) chats")
         }
+    }
+
+    /// The three dots: what there is beyond the list. Quit is here because Side Eye has no Dock icon, and
+    /// its menu bar icon can sit hidden behind a notch or a menu bar manager.
+    static func moreMenu(settings: @escaping () -> Void, welcome: @escaping () -> Void,
+                         quit: @escaping () -> Void) -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        menu.addItem(ClosureMenuItem("Settings…", run: settings))
+        menu.addItem(ClosureMenuItem("Welcome to Side Eye…", run: welcome))
+        menu.addItem(.separator())
+        menu.addItem(ClosureMenuItem("Quit Side Eye", run: quit))
+        return menu
+    }
+
+    private func showMoreMenu() {
+        let menu = Self.moreMenu(settings: { [weak self] in self?.onShowSettings?() },
+                                 welcome: { [weak self] in self?.onShowWelcome?() },
+                                 quit: { [weak self] in self?.onQuit?() })
+        // Under the pointer when a click opened it, else under the button at the sidebar's top right.
+        let pointer = NSEvent.mouseLocation
+        let place = sidebar.frame.contains(pointer) ? pointer
+            : NSPoint(x: sidebar.frame.maxX - 36, y: sidebar.frame.maxY - OverlayMetrics.compactToolbarHeight)
+        // After the click that opened it has finished, so the button does not stay pressed.
+        DispatchQueue.main.async { [weak self] in self?.presentMenu(menu, place) }
     }
 
     private func moveSelection(by step: Int) {
