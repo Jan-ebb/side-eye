@@ -361,11 +361,21 @@ enum SelfChecks {
                      "A development build has no app to open at login")
     }
 
+    /// Removes a check's own settings, and the empty file macOS would otherwise leave in Preferences for
+    /// every run.
+    private static func discard(_ defaults: UserDefaults, suite: String) {
+        defaults.removePersistentDomain(forName: suite)
+        CFPreferencesAppSynchronize(suite as CFString)
+        let file = FileManager.default.homeDirectoryForCurrentUser
+            .appending(path: "Library/Preferences/\(suite).plist")
+        try? FileManager.default.removeItem(at: file)
+    }
+
     /// A newcomer gets the welcome window at every launch until they have closed it once.
     private static func checkFirstLaunch() {
         let suite = "side-eye.first-launch-check.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suite) else { preconditionFailure("Missing test preferences") }
-        defer { defaults.removePersistentDomain(forName: suite) }
+        defer { discard(defaults, suite: suite) }
         let first = FirstLaunch.begin(in: defaults)
         precondition(first.showsWelcome && first.isNewUser, "A first launch should welcome a newcomer")
         defaults.set(Data([1]), forKey: "sessionHistory")
@@ -377,7 +387,7 @@ enum SelfChecks {
 
         let earlierSuite = "side-eye.first-launch-check.\(UUID().uuidString)"
         guard let earlier = UserDefaults(suiteName: earlierSuite) else { preconditionFailure("Missing test preferences") }
-        defer { earlier.removePersistentDomain(forName: earlierSuite) }
+        defer { discard(earlier, suite: earlierSuite) }
         earlier.set(Data([1]), forKey: "sessionHistory")
         let upgraded = FirstLaunch.begin(in: earlier)
         precondition(!upgraded.showsWelcome && !upgraded.isNewUser, "Someone with saved chats is not new")
@@ -767,7 +777,7 @@ enum SelfChecks {
     private static func checkPalette(now: Date) {
         let suite = "side-eye.palette-self-test.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suite) else { preconditionFailure("Missing test preferences") }
-        defer { defaults.removePersistentDomain(forName: suite) }
+        defer { discard(defaults, suite: suite) }
         let store = SessionStore(defaults: defaults)
         let reply = sample("reply", .codex, "Export retry", .ready, now, completedAt: now)
         let working = sample("working", .claude, "Billing cleanup", .working, now)
@@ -921,7 +931,7 @@ enum SelfChecks {
     private static func checkLater(now: Date) {
         let suite = "side-eye.later-self-test.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suite) else { preconditionFailure("Missing test preferences") }
-        defer { defaults.removePersistentDomain(forName: suite) }
+        defer { discard(defaults, suite: suite) }
 
         let store = SessionStore(defaults: defaults)
         let input = sample("z-input", .claude, "Approval requested", .needsInput, now,
@@ -1034,7 +1044,7 @@ enum SelfChecks {
     private static func checkLegacyMigration() {
         let suite = "side-eye.migration-self-test.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suite) else { preconditionFailure("Missing test preferences") }
-        defer { defaults.removePersistentDomain(forName: suite) }
+        defer { discard(defaults, suite: suite) }
         defaults.set("kept", forKey: "existing")
         let old: [String: Any] = ["pinnedSessionIDs": ["a", "b"], "existing": "old", "grokMainAgentsOnly": true]
         precondition(LegacySettings.migrate(from: old, into: defaults) == 2
@@ -1146,7 +1156,7 @@ enum SelfChecks {
     private static func checkArchive(now: Date) {
         let suite = "side-eye.archive-self-test.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suite) else { preconditionFailure("Missing test preferences") }
-        defer { defaults.removePersistentDomain(forName: suite) }
+        defer { discard(defaults, suite: suite) }
 
         let legacy = sample("legacy", .codex, "Legacy archive", .ready, now)
         let older = now.addingTimeInterval(-60).timeIntervalSinceReferenceDate
