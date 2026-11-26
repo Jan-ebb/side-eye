@@ -43,7 +43,7 @@ Side Eye has no Dock icon. It lives in the menu bar and as a small pill on the r
 
 ## Privacy
 
-Side Eye reads each app’s local files on your Mac to list its chats. It sends nothing anywhere: it has no account and collects no analytics. The only time it goes online is to download the summary model, and only when you press **Download**. Summaries then run on that model on your Mac through a private socket, so no chat text leaves it.
+Side Eye reads each app’s local files on your Mac to list its chats. It sends nothing anywhere: it has no account and collects no analytics. The only time it goes online is to download the summary model, and only when you press **Install**. Summaries then run on that model on your Mac through a private socket, so no chat text leaves it.
 
 ## The sidebar
 
@@ -140,7 +140,8 @@ To give a chat Side Eye does not find a row of its own, choose **Add chat link�
 
 With summaries on, Side Eye writes one sentence per chat about the latest request, the result and any next action. It shows in previews, on hover and in nudges. Summaries are optional and off until you ask for them.
 
-- **Getting them.** Press **Download** under **Settings → General**, or in the welcome window. Side Eye fetches the model, 1.1 GB from Hugging Face, checks it against a published SHA-256 and keeps it in `~/Library/Application Support/Side Eye/Models`. A file that fails the check is deleted. Settings can remove the model again.
+- **Getting them.** Press **Install** under **Settings → General**, or in the welcome window. Side Eye fetches the model, 1.1 GB from Hugging Face, checks it against a published SHA-256 and keeps it in `~/Library/Application Support/Side Eye/Models`. A file that fails the check is deleted. Settings can remove the model again.
+- **Without the model.** Settings marks it **Not installed**.
 - **Where they run.** On your Mac, on [llama.cpp](https://github.com/ggml-org/llama.cpp), which the release download carries inside the app. Side Eye starts it only when needed, talks to it over a private Unix socket and shuts it down when idle.
 - **What they read.** Bounded excerpts from the apps’ local caches. Summaries are kept in memory only. Where a recent transcript is absent, a row relies on what its app reports.
 - **The first one is slow.** The very first summary on a Mac takes about 15 seconds longer on Apple silicon, while macOS prepares the model’s GPU code. After that it is cached.

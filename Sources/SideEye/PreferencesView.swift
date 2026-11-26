@@ -562,6 +562,7 @@ struct SummaryRows: View {
     /// Settings also offers to delete a downloaded model again.
     var offersRemoval = false
     @State private var copied = false
+    @Environment(\.colorScheme) private var scheme
 
     private static let title = "Summarize recent chat text"
     private static let benefit = "See what changed and what’s next."
@@ -571,7 +572,7 @@ struct SummaryRows: View {
 
     var body: some View {
         if !model.hasSummaryServer {
-            row(detail: "Summaries are written on this Mac by llama.cpp, which isn’t installed. "
+            row(notInstalled: true, detail: "Summaries are written on this Mac by llama.cpp, which isn’t installed. "
                 + "In Terminal, run “\(Self.installCommand)”, then come back here.") {
                 Button(copied ? "Copied" : "Copy Command") {
                     NSPasteboard.general.clearContents()
@@ -608,8 +609,10 @@ struct SummaryRows: View {
                 }
             case .missing:
                 // The button names the size. Two lines at most, so the welcome window needs no scrolling.
-                row(detail: "\(Self.benefit) Downloads a model once. Chat text stays on this Mac.") {
-                    Button("Download \(size)", action: model.downloadSummaryModel)
+                row(notInstalled: true, detail: "\(Self.benefit) Downloads a model once. Chat text stays on this Mac.") {
+                    Button("Install \(size)", action: model.downloadSummaryModel)
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.regular)
                 }
             case .downloading(let received, let total):
                 SettingsRow {
@@ -632,16 +635,39 @@ struct SummaryRows: View {
                     ProgressView().controlSize(.small)
                 }
             case .failed(let message):
-                row(detail: message) {
+                row(notInstalled: true, detail: message) {
                     Button("Try Again", action: model.downloadSummaryModel)
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.regular)
                 }
             }
         }
     }
 
-    private func row<Control: View>(detail: String, @ViewBuilder control: () -> Control) -> some View {
-        SettingsRow {
-            SettingsLabel(title: Self.title, detail: detail)
+    /// `notInstalled` puts a badge beside the title, so the state reads at a glance.
+    private func row<Control: View>(notInstalled: Bool = false, detail: String,
+                                    @ViewBuilder control: () -> Control) -> some View {
+        let colors = OverlayColors(dark: scheme == .dark)
+        return SettingsRow {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 7) {
+                    Text(Self.title)
+                        .font(.system(size: 13))
+                    if notInstalled {
+                        Text("Not installed")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(colors.input)
+                            .padding(.horizontal, 6)
+                            .frame(height: 16)
+                            .background(colors.inputBadgeFill, in: Capsule())
+                            .fixedSize()
+                    }
+                }
+                Text(detail)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         } control: {
             control().controlSize(.small)
         }
