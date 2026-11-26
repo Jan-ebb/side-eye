@@ -176,6 +176,10 @@ struct OverlayColors {
     var divider: Color { color(0x343437, 0xE4E5EA) }
     var selection: Color { color(0x2B2B30, 0xEDF0FC) }
     var accent: Color { color(0xADB6FB, 0x464EA8) }
+    /// Switches that are on, ticked boxes and the main button in Settings and the welcome window: the
+    /// ink of the app icon. The Mac's own accent colour can be Graphite, which draws them grey, as if
+    /// they were off.
+    var control: Color { color(0x8A888F, 0x232530) }
     var inset: Color { color(0x242426, 0xF4F4F3) }
     var input: Color { color(0xF5C577, 0x704400) }
     var review: Color { color(0x9AD9AB, 0x1E5938) }

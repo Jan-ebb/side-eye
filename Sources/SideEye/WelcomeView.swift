@@ -80,6 +80,7 @@ struct WelcomeView: View {
         }
         .frame(minWidth: 440, minHeight: 480)
         .background(Color(nsColor: .windowBackgroundColor))
+        .tint(OverlayColors(dark: scheme == .dark).control)
     }
 
     private var header: some View {

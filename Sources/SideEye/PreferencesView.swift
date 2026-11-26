@@ -62,11 +62,14 @@ struct PreferencesView: View {
         }
         .frame(minWidth: 420, minHeight: 360)
         .background(Color(nsColor: .windowBackgroundColor))
+        .tint(ink)
         // Coming back from Terminal or System Settings, the window shows what changed there.
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             model.refreshSystemState()
         }
     }
+
+    private var ink: Color { OverlayColors(dark: scheme == .dark).control }
 
     // MARK: General
 
@@ -293,10 +296,10 @@ struct PreferencesView: View {
                                 if agent.isNew(now: now) && !isMain {
                                     Text("New")
                                         .font(.system(size: 10, weight: .semibold))
-                                        .foregroundStyle(Color.accentColor)
+                                        .foregroundStyle(ink)
                                         .padding(.horizontal, 5)
                                         .frame(height: 15)
-                                        .background(Color.accentColor.opacity(0.14), in: Capsule())
+                                        .background(ink.opacity(0.1), in: Capsule())
                                         .fixedSize()
                                 }
                             }
