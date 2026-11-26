@@ -66,6 +66,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.preferences.selection = .general
             self?.showSettings()
         }
+        overlay.onInstallUpdate = { [weak self] in self?.preferences.installUpdate() }
         preferences.onEdgeVisibility = { [weak overlay] in overlay?.setEdgeVisible($0) }
         preferences.onMuteNudges = { [weak overlay] in overlay?.clearAttentionNudge() }
         preferences.onAction = { [weak self] in self?.performPreferenceAction($0) }
@@ -95,6 +96,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.scanner = scanner
         scanner.start()
         showWelcomeOnFirstRun()
+        preferences.startUpdateChecks()
         wakeToken = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
         ) { [weak self] _ in

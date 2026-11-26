@@ -37,6 +37,9 @@ for size in 16 32 128 256 512; do
 done
 /usr/bin/iconutil -c icns "$iconset" -o "$app/Contents/Resources/SideEye.icns"
 
+# The installer goes inside: it is what Side Eye runs when someone presses Update.
+/usr/bin/install -m 644 "$project/install.sh" "$app/Contents/Resources/install.sh"
+
 if [[ -n "${SIDE_EYE_SUMMARY_MODEL:-}" ]]; then
   models="$app/Contents/Resources/Models"
   mkdir -p "$models"

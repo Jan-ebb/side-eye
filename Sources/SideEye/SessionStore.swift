@@ -102,6 +102,10 @@ final class SessionStore: ObservableObject {
     /// points to Settings, until the person hides that note.
     @Published var summaryModelMissing = false
     @Published private(set) var summaryNoteHidden = false
+    /// A newer release of Side Eye, once the daily check has found one. The sidebar offers it in a
+    /// note until the person hides the note for that version.
+    @Published var update: UpdateOffer?
+    @Published private(set) var hiddenUpdate: String?
     /// Favorites, in the order they were added. They stay in their groups in the Inbox and have their own tab.
     @Published private(set) var pinnedIDs: [String]
     @Published private(set) var showsAutomationRuns: Bool
@@ -309,16 +313,35 @@ final class SessionStore: ObservableObject {
         onRowsChanged?()
     }
 
-    /// Whether the sidebar should say that summaries are not installed: only where the previews are,
-    /// which without the model can say no more than where each chat runs.
-    var showsSummaryNote: Bool {
-        summaryModelMissing && !summaryNoteHidden && showsAllSummaries && palette == nil && numberEntry == nil
-            && !isSearching && filter != .archive
+    /// What the sidebar says above its list. One note at a time, and a newer release comes first.
+    enum Note: Equatable {
+        case update(UpdateOffer)
+        case summaryModel
     }
+
+    /// Notes belong to the plain list: search, the number picker, the palette and the Archive have no
+    /// room for them. The model note shows only where the previews are, which without the model can say
+    /// no more than where each chat runs.
+    var note: Note? {
+        guard palette == nil, numberEntry == nil, !isSearching, filter != .archive else { return nil }
+        // An update on its way is shown even where its offer was hidden.
+        if let update, update.phase == .installing || update.version.description != hiddenUpdate { return .update(update) }
+        if summaryModelMissing && !summaryNoteHidden && showsAllSummaries { return .summaryModel }
+        return nil
+    }
+
+    var showsSummaryNote: Bool { note == .summaryModel }
 
     func hideSummaryNote() {
         summaryNoteHidden = true
         defaults?.set(true, forKey: "summaryNoteHidden")
+    }
+
+    /// Hides the offer of this version. A later version is offered again.
+    func hideUpdateNote() {
+        guard let update else { return }
+        hiddenUpdate = update.version.description
+        defaults?.set(hiddenUpdate, forKey: "updateNoteHiddenVersion")
     }
 
     func setShowsAllSummaries(_ value: Bool) {
@@ -399,6 +422,7 @@ final class SessionStore: ObservableObject {
         self.defaults = defaults
         showsAllSummaries = defaults?.bool(forKey: Self.briefingPreferenceKey) ?? false
         summaryNoteHidden = defaults?.bool(forKey: "summaryNoteHidden") ?? false
+        hiddenUpdate = defaults?.string(forKey: "updateNoteHiddenVersion")
         pinnedIDs = defaults?.stringArray(forKey: Self.pinnedPreferenceKey) ?? []
         showsAutomationRuns = defaults?.bool(forKey: Self.automationRunsPreferenceKey) ?? false
         grokMainOnly = defaults?.bool(forKey: "grokMainAgentsOnly") ?? false

@@ -34,7 +34,7 @@ enum OverlayMetrics {
     static let filterHeight: CGFloat = 31
     static let jumpBarHeight: CGFloat = 35
     static let footerHeight: CGFloat = 32
-    static let summaryNoteHeight: CGFloat = 54
+    static let noteHeight: CGFloat = 54
     static let emptyHeight: CGFloat = 88
     static let maxListHeight: CGFloat = 470
     static let maxBriefingListHeight: CGFloat = 560
@@ -137,7 +137,7 @@ enum OverlayMetrics {
             let filters = store.filter == .archive ? 0 : filterHeight
             return headerHeight + filters + list + footerHeight + 2
         }
-        return compactToolbarHeight + (store.showsSummaryNote ? summaryNoteHeight : 0) + list + footerHeight + 2
+        return compactToolbarHeight + (store.note == nil ? 0 : noteHeight) + list + footerHeight + 2
     }
 }
 
@@ -482,6 +482,7 @@ struct SidebarView: View {
     let hide: (Session) -> Void
     let showMenu: () -> Void
     var showSummarySettings: () -> Void = {}
+    var installUpdate: () -> Void = {}
     let jump: () -> Void
     let search: () -> Void
     let toggleLater: (Session) -> Void
@@ -528,7 +529,7 @@ struct SidebarView: View {
                         .overlay(alignment: .bottom) { hairline }
                 } else {
                     compactToolbar
-                    if store.showsSummaryNote { summaryNote }
+                    if let note = store.note { noteView(note) }
                 }
             } else {
                 header
@@ -628,14 +629,53 @@ struct SidebarView: View {
         .overlay(alignment: .bottom) { hairline }
     }
 
-    /// With previews on and no summary model on this Mac, the line under a chat can only say where it
-    /// runs. This says why, names the model and leads to the place where it is installed.
-    private var summaryNote: some View {
+    /// The note above the list. With previews on and no summary model on this Mac, the line under a
+    /// chat can only say where it runs: the note says why, names the model and leads to the place
+    /// where it is installed. A newer release of Side Eye is offered the same way, and comes first.
+    private func noteView(_ note: SessionStore.Note) -> some View {
+        let title: String
+        let detail: String
+        var action: NoteAction?
+        var busy = false
+        var hide: (() -> Void)?
+        switch note {
+        case .summaryModel:
+            title = "\(SummaryModel.name) is not installed"
+            detail = "The local model that summarizes each chat."
+            action = NoteAction(title: "Install…", help: "Open Settings, where \(SummaryModel.name) is installed",
+                                label: "Install \(SummaryModel.name) in Settings", run: showSummarySettings)
+            hide = { store.hideSummaryNote() }
+        case .update(let offer):
+            title = offer.title
+            detail = offer.detail(current: AppVersion.current)
+            if let button = offer.actionTitle {
+                action = NoteAction(title: button, help: "Download Side Eye \(offer.version) and put it in place of this copy",
+                                    label: "\(button) to Side Eye \(offer.version)", run: installUpdate)
+                hide = { store.hideUpdateNote() }
+            } else {
+                busy = true
+            }
+        }
+        return noteRow(title: title, detail: detail, action: action, busy: busy, hide: hide)
+    }
+
+    private struct NoteAction {
+        let title: String
+        let help: String
+        let label: String
+        let run: () -> Void
+    }
+
+    /// Two lines, at most one button, and a way to put the note away.
+    private func noteRow(title: String, detail: String, action: NoteAction?, busy: Bool = false,
+                         hide: (() -> Void)?) -> some View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("\(SummaryModel.name) is not installed")
+                Text(title)
                     .font(.system(size: 13, weight: .semibold))
-                Text("The local model that summarizes each chat.")
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.9)
+                Text(detail)
                     .font(.system(size: 12))
                     .foregroundStyle(colors.secondary)
                     .lineLimit(1)
@@ -643,32 +683,41 @@ struct SidebarView: View {
             }
             .accessibilityElement(children: .combine)
             Spacer(minLength: 0)
-            Button(action: showSummarySettings) {
-                Text("Install…")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(colors.surface)
-                    .padding(.horizontal, 11)
-                    .frame(height: 24)
-                    .background(colors.primary, in: Capsule())
-                    .contentShape(Capsule())
+            if busy {
+                ProgressView()
+                    .controlSize(.small)
+                    .padding(.trailing, 8)
             }
-            .buttonStyle(.plain)
-            .help("Open Settings, where \(SummaryModel.name) is installed")
-            .accessibilityLabel("Install \(SummaryModel.name) in Settings")
-            Button(action: store.hideSummaryNote) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(colors.tertiary)
-                    .frame(width: 20, height: 24)
-                    .contentShape(Rectangle())
+            if let action {
+                Button(action: action.run) {
+                    Text(action.title)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(colors.surface)
+                        .padding(.horizontal, 11)
+                        .frame(height: 24)
+                        .background(colors.primary, in: Capsule())
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .help(action.help)
+                .accessibilityLabel(action.label)
             }
-            .buttonStyle(.plain)
-            .help("Hide this note")
-            .accessibilityLabel("Hide this note")
+            if let hide {
+                Button(action: hide) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(colors.tertiary)
+                        .frame(width: 20, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Hide this note")
+                .accessibilityLabel("Hide this note")
+            }
         }
         .padding(.leading, 13)
         .padding(.trailing, 7)
-        .frame(height: OverlayMetrics.summaryNoteHeight)
+        .frame(height: OverlayMetrics.noteHeight)
         .background(colors.inset)
         .overlay(alignment: .bottom) { hairline }
     }

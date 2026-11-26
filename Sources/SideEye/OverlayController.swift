@@ -117,6 +117,7 @@ final class OverlayController {
     var onUndo: (() -> Void)?
     var onShowSettings: (() -> Void)?
     var onShowSummarySettings: (() -> Void)?
+    var onInstallUpdate: (() -> Void)?
 
     var isShowing: Bool { sidebar.isVisible }
     var isNudging: Bool { nudge.isVisible }
@@ -144,6 +145,7 @@ final class OverlayController {
                                hide: { [weak self] in self?.onHide?($0) },
                                showMenu: { [weak self] in self?.onShowSettings?() },
                                showSummarySettings: { [weak self] in self?.onShowSummarySettings?() },
+                               installUpdate: { [weak self] in self?.onInstallUpdate?() },
                                jump: { [weak self] in self?.jumpByNumber() },
                                search: { [weak self] in self?.beginSearch() },
                                toggleLater: { [weak self] in self?.onLater?($0) },

@@ -15,7 +15,7 @@ Side Eye needs macOS 14 or later and runs on Apple silicon and Intel. Paste this
 curl -fsSL https://raw.githubusercontent.com/Jan-ebb/side-eye/main/install.sh | bash
 ```
 
-It downloads the newest release, checks it against the SHA-256 published with it, puts Side Eye.app in Applications and opens it. Run it again to update. [The script](install.sh) is short if you want to read it first.
+It downloads the newest release, checks it against the SHA-256 published with it, puts Side Eye.app in Applications and opens it. [The script](install.sh) is short if you want to read it first.
 
 Use this command and not the zip on the Releases page. A browser marks every file it downloads, and macOS refuses to open a marked app unless Apple has reviewed it, which it has not done for Side Eye. `curl` adds no such mark.
 
@@ -30,6 +30,14 @@ open "/Applications/Side Eye.app"
 
 A copy you build this way gets its summaries a little differently; see [Build and check](#build-and-check).
 
+### Updates
+
+Once a day Side Eye asks GitHub which release is the newest. When there is a newer one, a note at the top of the sidebar and **Settings → General** offer it with an **Update** button.
+
+- **What Update does.** It runs the copy of the install script that came inside the app. The script downloads that release, checks it against its published SHA-256, puts it in place of the copy you are running and reopens Side Eye. If it can’t, the copy you have stays and reopens.
+- **What the check sends.** One request for an address on github.com. It carries no chat text, no settings and no identifier. The first check comes a day after Side Eye first runs.
+- **Turning it off.** Switch off **Check for updates** under **Settings → General** and Side Eye never asks. Running the install command again updates it by hand.
+
 ## First run
 
 Side Eye has no Dock icon. It lives in the menu bar and as a small pill on the right edge of your screen. The first time you open it, a welcome window shows which apps it found, how to open the sidebar and what its three statuses mean. It comes back at each launch until you close it, and you can reopen it any time from the menu bar icon under **Welcome to Side Eye…**.
@@ -43,7 +51,7 @@ Side Eye has no Dock icon. It lives in the menu bar and as a small pill on the r
 
 ## Privacy
 
-Side Eye reads each app’s local files on your Mac to list its chats. It sends nothing anywhere: it has no account and collects no analytics. The only time it goes online is to download the summary model, and only when you press **Install**. Summaries then run on that model on your Mac through a private socket, so no chat text leaves it.
+Side Eye reads each app’s local files on your Mac to list its chats. None of that leaves your Mac: Side Eye has no account and collects no analytics. It goes online for two things only. Once a day it asks GitHub which release is the newest, a request that carries nothing about you or your chats and that you can [turn off](#updates). And it downloads the summary model, only when you press **Install**. Summaries then run on that model on your Mac through a private socket, so no chat text leaves it.
 
 ## The sidebar
 

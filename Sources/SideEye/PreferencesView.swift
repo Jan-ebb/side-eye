@@ -29,7 +29,7 @@ struct PreferencesView: View {
     }
     @Environment(\.colorScheme) private var scheme
 
-    static let windowSize = CGSize(width: 520, height: 500)
+    static let windowSize = CGSize(width: 520, height: 580)
 
     var body: some View {
         VStack(spacing: 0) {
@@ -84,6 +84,25 @@ struct PreferencesView: View {
                 SettingsDivider()
                 settingToggle("Nudge me about chats", detail: "A short note appears when a chat finishes or needs you.",
                               value: $model.nudgesEnabled)
+                SettingsDivider()
+                settingToggle("Check for updates",
+                              detail: "Asks GitHub once a day for the newest version."
+                                  + (model.currentVersion.map { " This is \($0)." } ?? ""),
+                              value: $model.updateChecksEnabled)
+                if let offer = model.update {
+                    SettingsDivider()
+                    SettingsRow {
+                        SettingsLabel(title: offer.title, detail: offer.detail(current: model.currentVersion))
+                    } control: {
+                        if let title = offer.actionTitle {
+                            Button(title, action: model.installUpdate)
+                                .buttonStyle(.borderedProminent)
+                                .controlSize(.regular)
+                        } else {
+                            ProgressView().controlSize(.small)
+                        }
+                    }
+                }
                 if model.hasMultipleDisplays {
                     SettingsDivider()
                     SettingsRow {

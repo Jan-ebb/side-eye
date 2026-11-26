@@ -117,6 +117,7 @@ enum SelfChecks {
         checkDetailLines(now: now)
         checkOpenAtLogin()
         checkSummaryNote(now: now)
+        checkUpdates(now: now)
         checkSummaryModelDownload()
         checkFirstLaunch()
 
@@ -385,7 +386,7 @@ enum SelfChecks {
         precondition(store.showsSummaryNote, "Previews without the model should say that it is not installed")
         store.summaryModelMissing = false
         precondition(!store.showsSummaryNote
-                     && previews - OverlayMetrics.sidebarHeight(for: store) == OverlayMetrics.summaryNoteHeight,
+                     && previews - OverlayMetrics.sidebarHeight(for: store) == OverlayMetrics.noteHeight,
                      "The note should take its own height and go once the model is there")
         store.summaryModelMissing = true
         store.setQuery("sample")
@@ -396,6 +397,168 @@ enum SelfChecks {
     }
 
     /// A newcomer gets the welcome window at every launch until they have closed it once.
+    /// The daily question about a newer release: when it is asked, what it does with the answer, and
+    /// what the sidebar and the Update button make of it. Nothing here reaches the network.
+    private static func checkUpdates(now: Date) {
+        func version(_ text: String) -> AppVersion { AppVersion(text)! }
+        precondition(version("0.18.10") > version("0.18.9") && version("0.19.0") > version("0.18.10")
+                     && version("v1.0.0") > version("0.99.99") && version("v0.18.6") == version("0.18.6"),
+                     "Versions compare number by number, not letter by letter")
+        precondition(version("v0.18.6").description == "0.18.6")
+        for text in ["", "0.18", "0.18.6.1", "0.18.x", "0.18.-6", "1..2", "latest", "0.18.6-beta", "٠.١.٢"] {
+            precondition(AppVersion(text) == nil, "\(text) is not a version")
+        }
+        func page(_ text: String) -> AppVersion? { UpdateCheck.version(fromReleasePage: URL(string: text)) }
+        precondition(page("https://github.com/Jan-ebb/side-eye/releases/tag/v0.19.0") == version("0.19.0"))
+        precondition(page("https://github.com/Jan-ebb/side-eye/releases") == nil
+                     && page("https://github.com/Jan-ebb/side-eye/releases/latest") == nil
+                     && page("https://example.com/Jan-ebb/side-eye/releases/tag/v0.19.0") == nil
+                     && page("http://github.com/Jan-ebb/side-eye/releases/tag/v0.19.0") == nil
+                     && UpdateCheck.version(fromReleasePage: nil) == nil,
+                     "Only a release page on GitHub names a version")
+        precondition(UpdateCheck.newestRelease.scheme == "https" && UpdateCheck.newestRelease.host == "github.com")
+        let day = UpdateCheck.interval
+        precondition(!UpdateCheck.isDue(last: now.addingTimeInterval(-day + 60), now: now)
+                     && UpdateCheck.isDue(last: now.addingTimeInterval(-day), now: now)
+                     && UpdateCheck.isDue(last: now.addingTimeInterval(3600), now: now),
+                     "Once a day, and a clock set back does not stop the checks")
+
+        let writable: (String) -> Bool = { $0 == "/Applications" }
+        precondition(UpdateInstaller.installFolder(forBundleAt: "/Applications/Side Eye.app", isWritable: writable) == "/Applications"
+                     && UpdateInstaller.installFolder(forBundleAt: "/Volumes/Read Only/Side Eye.app", isWritable: writable) == nil
+                     && UpdateInstaller.installFolder(forBundleAt: "/private/var/folders/x/AppTranslocation/y/d/Side Eye.app",
+                                                      isWritable: { _ in true }) == nil
+                     && UpdateInstaller.installFolder(forBundleAt: "/tmp/.build/debug/SideEye", isWritable: { _ in true }) == nil,
+                     "The update goes where this copy is, if it is an installed copy in a folder that can be written")
+        let environment = UpdateInstaller.environment(version: version("0.19.0"), bundlePath: "/Applications/Side Eye.app",
+                                                      home: "/Users/sample", isWritable: writable)
+        precondition(environment == ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "HOME": "/Users/sample",
+                                     "SIDE_EYE_VERSION": "0.19.0", "SIDE_EYE_INSTALL_DIR": "/Applications"],
+                     "The installer is told the version and the folder, and nothing else")
+
+        let suite = "side-eye.self-test.updates.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { discard(defaults, suite: suite) }
+        let store = SessionStore(defaults: defaults)
+        store.ingest([sample("update", .codex, "Sample chat", .working, now)])
+        let plain = OverlayMetrics.sidebarHeight(for: store)
+        let settings = PreferencesModel(store: store, defaults: defaults)
+        settings.currentVersion = version("0.18.6")
+        final class Answers: @unchecked Sendable {
+            var newest: AppVersion?
+            var asked = 0
+        }
+        let answers = Answers()
+        settings.newestRelease = { answers.asked += 1; return answers.newest }
+        var installs: [AppVersion] = []
+        var installerStarts = true
+        var installerFailed: (@Sendable () -> Void)?
+        settings.startInstaller = { version, failed in
+            installs.append(version)
+            installerFailed = failed
+            return installerStarts
+        }
+        /// Lets work that hops to the main actor through while this check waits.
+        func settle(_ done: () -> Bool = { false }) {
+            let deadline = Date().addingTimeInterval(done() ? 0 : 0.3)
+            while !done(), Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+        }
+        func check(at time: Date) {
+            var finished = false
+            Task { @MainActor in
+                await settings.checkForUpdateIfDue(now: time)
+                finished = true
+            }
+            settle { finished }
+            precondition(finished, "The check for a newer release never ended")
+        }
+
+        precondition(settings.updateChecksEnabled && settings.update == nil, "Checks are on unless switched off")
+        answers.newest = version("0.19.0")
+        check(at: now)
+        precondition(answers.asked == 0, "Nothing is asked before Side Eye has run once")
+        // Its first run starts the day's wait.
+        defaults.set(now, forKey: "updateLastCheck")
+        check(at: now.addingTimeInterval(day - 60))
+        precondition(answers.asked == 0 && settings.update == nil, "The first question waits a day")
+        check(at: now.addingTimeInterval(day))
+        precondition(answers.asked == 1 && settings.update == UpdateOffer(version: version("0.19.0")), "A newer release is offered")
+        precondition(store.note == .update(UpdateOffer(version: version("0.19.0")))
+                     && OverlayMetrics.sidebarHeight(for: store) - plain == OverlayMetrics.noteHeight,
+                     "The sidebar offers the update in a note of its own height")
+        check(at: now.addingTimeInterval(day + 3600))
+        precondition(answers.asked == 1, "One answer lasts a day")
+
+        // Without an answer, as when offline, the offer stays and the next look asks again.
+        answers.newest = nil
+        check(at: now.addingTimeInterval(2 * day))
+        check(at: now.addingTimeInterval(2 * day + 3600))
+        precondition(answers.asked == 3 && settings.update?.version == version("0.19.0"))
+
+        // The update note comes before the model note, and only one shows.
+        store.setShowsAllSummaries(true)
+        store.summaryModelMissing = true
+        precondition(store.note == .update(UpdateOffer(version: version("0.19.0"))) && !store.showsSummaryNote)
+        store.hideUpdateNote()
+        precondition(store.note == .summaryModel && settings.update != nil, "Hiding the note keeps the offer in Settings")
+        store.summaryModelMissing = false
+        precondition(store.note == nil)
+        answers.newest = version("0.19.1")
+        check(at: now.addingTimeInterval(3 * day))
+        precondition(store.note == .update(UpdateOffer(version: version("0.19.1"))), "A later release is offered again")
+        precondition(SessionStore(defaults: defaults).hiddenUpdate == "0.19.0", "The hidden version is remembered")
+
+        // Pressing Update runs the installer for the offered version. One that cannot start, or stops
+        // with an error, says so and can be tried again.
+        installerStarts = false
+        settings.installUpdate()
+        precondition(installs == [version("0.19.1")] && settings.update?.phase == .failed
+                     && settings.update?.actionTitle == "Try Again")
+        installerStarts = true
+        settings.installUpdate()
+        precondition(installs.count == 2 && settings.update?.phase == .installing && settings.update?.actionTitle == nil)
+        settings.installUpdate()
+        precondition(installs.count == 2, "An update on its way is not started twice")
+        store.hideUpdateNote()
+        precondition(store.note == .update(UpdateOffer(version: version("0.19.1"), phase: .installing)),
+                     "An update on its way stays in view")
+        installerFailed?()
+        settle { settings.update?.phase == .failed }
+        precondition(settings.update?.phase == .failed && store.update?.phase == .failed)
+
+        // A copy that is already the newest, or newer than the newest release, is offered nothing.
+        let later = PreferencesModel(store: SessionStore(defaults: nil), defaults: defaults)
+        later.currentVersion = version("0.19.1")
+        later.newestRelease = { nil }
+        later.startUpdateChecks(now: now.addingTimeInterval(3 * day))
+        precondition(later.update == nil, "The release this copy already is should not be offered")
+        let earlier = PreferencesModel(store: SessionStore(defaults: nil), defaults: defaults)
+        earlier.currentVersion = version("0.18.6")
+        earlier.newestRelease = { nil }
+        earlier.startUpdateChecks(now: now.addingTimeInterval(3 * day))
+        precondition(earlier.update?.version == version("0.19.1"), "A found release is offered again at the next launch")
+
+        // Switched off: the offer goes and nothing more is asked.
+        let asked = answers.asked
+        settings.updateChecksEnabled = false
+        check(at: now.addingTimeInterval(9 * day))
+        precondition(settings.update == nil && store.update == nil && answers.asked == asked
+                     && defaults.object(forKey: "updateChecks") as? Bool == false)
+        // Switched back on, it asks at once.
+        answers.newest = version("0.20.0")
+        settings.updateChecksEnabled = true
+        settle { settings.update != nil }
+        precondition(answers.asked == asked + 1 && settings.update?.version == version("0.20.0"))
+
+        // A development build has no version, so it asks nothing.
+        let bare = PreferencesModel(store: SessionStore(defaults: nil), defaults: defaults)
+        bare.currentVersion = nil
+        bare.newestRelease = { preconditionFailure("A build without a version must not ask") }
+        bare.startUpdateChecks(now: now.addingTimeInterval(30 * day))
+        settle()
+        precondition(bare.update == nil)
+    }
+
     private static func checkFirstLaunch() {
         let suite = "side-eye.first-launch-check.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suite) else { preconditionFailure("Missing test preferences") }

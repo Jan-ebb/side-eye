@@ -40,6 +40,23 @@ final class PreferencesModel: ObservableObject {
             refreshSources()
         }
     }
+    /// Whether Side Eye asks GitHub, once a day, for the newest version number.
+    @Published var updateChecksEnabled: Bool {
+        didSet {
+            guard updateChecksEnabled != oldValue else { return }
+            defaults?.set(updateChecksEnabled, forKey: Self.updateChecksKey)
+            if updateChecksEnabled {
+                // Turning it on is asking, so the answer does not wait for tomorrow.
+                Task { await checkForUpdate(now: Date()) }
+            } else if update?.phase != .installing {
+                update = nil
+            }
+        }
+    }
+    /// A newer release than this copy, once a check has found one. The sidebar shows the same offer.
+    @Published private(set) var update: UpdateOffer? {
+        didSet { if store.update != update { store.update = update } }
+    }
     @Published private(set) var launchAtLogin = false
     /// Where the summary model stands on this Mac.
     @Published private(set) var summaryModel: SummaryModelState = .missing { didSet { syncSummaryNote() } }
@@ -61,6 +78,17 @@ final class PreferencesModel: ObservableObject {
     private var modelDownload: SummaryModelDownload?
     /// The model Settings offers. Checks point this at a small file on disk.
     var summaryModelFile = SummaryModel.pinned
+    /// What the daily check asks, the version it compares the answer with, and what Update runs.
+    /// Checks replace all three, so they never reach the network or touch an installed copy.
+    var newestRelease: @Sendable () async -> AppVersion? = { await UpdateCheck.newest() }
+    var currentVersion = AppVersion.current
+    var startInstaller: (AppVersion, @escaping @Sendable () -> Void) -> Bool = UpdateInstaller.start(version:failed:)
+    private var isCheckingForUpdate = false
+    private var updateTimer: Timer?
+
+    private static let updateChecksKey = "updateChecks"
+    private static let lastUpdateCheckKey = "updateLastCheck"
+    private static let newestVersionKey = "updateNewestVersion"
 
     init(store: SessionStore, defaults: UserDefaults? = .standard) {
         self.store = store
@@ -68,6 +96,7 @@ final class PreferencesModel: ObservableObject {
         edgeVisible = defaults?.object(forKey: "edgeVisible") as? Bool ?? true
         nudgesEnabled = !(defaults?.bool(forKey: "muteNudges") ?? false)
         localPreviewsEnabled = defaults?.bool(forKey: SessionSummaryProvider.preferenceKey) ?? false
+        updateChecksEnabled = defaults?.object(forKey: Self.updateChecksKey) as? Bool ?? true
         sourceEnabled = Dictionary(uniqueKeysWithValues: Source.allCases.map { ($0, $0.isEnabled(in: defaults)) })
         refreshSystemState()
     }
@@ -143,6 +172,67 @@ final class PreferencesModel: ObservableObject {
         case .failed(let message):
             summaryModel = .failed(message)
         }
+    }
+
+    // MARK: Updates
+
+    /// Call once at launch. Offers again what an earlier check found, then looks every hour whether a
+    /// day has passed. The first check comes a day after Side Eye first runs, never at first launch.
+    func startUpdateChecks(now: Date = Date()) {
+        guard let defaults, currentVersion != nil else { return }
+        if defaults.object(forKey: Self.lastUpdateCheckKey) == nil { defaults.set(now, forKey: Self.lastUpdateCheckKey) }
+        offerUpdate(newest: defaults.string(forKey: Self.newestVersionKey).flatMap(AppVersion.init))
+        let timer = Timer.scheduledTimer(withTimeInterval: 60 * 60, repeats: true) { [weak self] _ in
+            Task { @MainActor in await self?.checkForUpdateIfDue() }
+        }
+        timer.tolerance = 5 * 60
+        updateTimer = timer
+        Task { await checkForUpdateIfDue(now: now) }
+    }
+
+    /// Asks only when a day has passed since the last answer. Without an answer, as when offline, the
+    /// next hourly look asks again.
+    func checkForUpdateIfDue(now: Date = Date()) async {
+        guard updateChecksEnabled, currentVersion != nil,
+              let last = defaults?.object(forKey: Self.lastUpdateCheckKey) as? Date,
+              UpdateCheck.isDue(last: last, now: now) else { return }
+        await checkForUpdate(now: now)
+    }
+
+    private func checkForUpdate(now: Date) async {
+        guard currentVersion != nil, !isCheckingForUpdate else { return }
+        isCheckingForUpdate = true
+        defer { isCheckingForUpdate = false }
+        // Switched off while the question was out: the answer is dropped.
+        guard let newest = await newestRelease(), updateChecksEnabled else { return }
+        defaults?.set(now, forKey: Self.lastUpdateCheckKey)
+        defaults?.set(newest.description, forKey: Self.newestVersionKey)
+        offerUpdate(newest: newest)
+    }
+
+    private func offerUpdate(newest: AppVersion?) {
+        guard update?.phase != .installing else { return }
+        guard updateChecksEnabled, let newest, let currentVersion, newest > currentVersion else {
+            update = nil
+            return
+        }
+        if update?.version != newest { update = UpdateOffer(version: newest) }
+    }
+
+    /// Installs the offered release. Only ever called from a button that names the version.
+    func installUpdate() {
+        guard var offer = update, offer.phase != .installing else { return }
+        let started = startInstaller(offer.version) { [weak self] in
+            Task { @MainActor in self?.updateFailed() }
+        }
+        offer.phase = started ? .installing : .failed
+        update = offer
+    }
+
+    private func updateFailed() {
+        guard var offer = update else { return }
+        offer.phase = .failed
+        update = offer
     }
 
     func setLaunchAtLogin(_ enabled: Bool) {

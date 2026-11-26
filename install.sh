@@ -8,6 +8,8 @@
 # no download warning, so macOS opens the app without the "could not verify" dialog that a browser
 # download gets.
 #
+# Side Eye carries a copy of this script and runs it when you press Update.
+#
 # Environment, all optional:
 #   SIDE_EYE_VERSION        install this version, such as 0.18.0, in place of the newest
 #   SIDE_EYE_INSTALL_DIR    where the app goes (default: /Applications, or ~/Applications if you
@@ -59,12 +61,14 @@ mkdir -p "$destination"
 
 # A running copy is asked to quit, so the new one can take its place. So is the program inside it
 # that writes summaries, which would otherwise keep running from the copy that is about to go.
+# pgrep and pkill leave out the processes they descend from unless told otherwise with -a, and when
+# Side Eye runs this script itself, the copy to quit is exactly that.
 was_running=0
-if pgrep -x SideEye > /dev/null; then
+if pgrep -a -x SideEye > /dev/null; then
   was_running=1
-  pkill -x SideEye || true
+  pkill -a -x SideEye || true
   for _ in 1 2 3 4 5 6 7 8 9 10; do
-    pgrep -x SideEye > /dev/null || break
+    pgrep -a -x SideEye > /dev/null || break
     sleep 0.3
   done
 fi
