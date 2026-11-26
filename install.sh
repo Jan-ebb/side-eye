@@ -57,18 +57,39 @@ destination="${SIDE_EYE_INSTALL_DIR:-/Applications}"
 if [[ -z "${SIDE_EYE_INSTALL_DIR:-}" && ! -w "$destination" ]]; then destination="$HOME/Applications"; fi
 mkdir -p "$destination"
 
-# A running copy is asked to quit, so the new one can take its place.
+# A running copy is asked to quit, so the new one can take its place. So is the program inside it
+# that writes summaries, which would otherwise keep running from the copy that is about to go.
+was_running=0
 if pgrep -x SideEye > /dev/null; then
+  was_running=1
   pkill -x SideEye || true
   for _ in 1 2 3 4 5 6 7 8 9 10; do
     pgrep -x SideEye > /dev/null || break
     sleep 0.3
   done
 fi
+for pid in $(pgrep -f "$app/Contents/Helpers/llama-server" || true); do
+  if [[ "$pid" != "$$" ]]; then kill "$pid" 2> /dev/null || true; fi
+done
 
+# The copy in place is moved aside, not deleted, until the new one is where it belongs. If that
+# fails, the old copy goes back and is opened again, so a failed update still leaves a working one.
 target="$destination/$app"
-if [[ -e "$target" ]]; then rm -rf "$target"; fi
-mv "$work/unpacked/$app" "$target"
+moved_aside=0
+put_back() {
+  if [[ "$moved_aside" == 1 ]]; then
+    rm -rf "$target" 2> /dev/null || true
+    mv "$work/previous/$app" "$target" || true
+  fi
+  if [[ "$was_running" == 1 && -e "$target" ]]; then open "$target" || true; fi
+  stop "Couldn't put Side Eye in ${destination}."
+}
+if [[ -e "$target" ]]; then
+  mkdir -p "$work/previous"
+  mv "$target" "$work/previous/" || put_back
+  moved_aside=1
+fi
+mv "$work/unpacked/$app" "$target" || put_back
 
 echo "Installed Side Eye ${version} in ${destination}."
 open "$target"
