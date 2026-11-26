@@ -441,6 +441,8 @@ enum SelfChecks {
         precondition(file.matches(source) && file.installed == nil && !file.isRemovable)
         precondition(SummaryModel.pinned.sizeText == "1.1 GB" && SummaryModel.sizeText(412_300_000) == "412 MB")
         precondition(SummaryModel.pinned.source.scheme == "https" && SummaryModel.pinned.sha256.count == 64)
+        precondition(SummaryModel.pinned.source.lastPathComponent.hasPrefix(SummaryModel.name + "-"),
+                     "The model Side Eye names should be the one it downloads")
         let servers = LocalSummaryEngine.serverCandidates(app: URL(fileURLWithPath: "/Applications/Side Eye.app"))
         precondition(servers.first?.path == "/Applications/Side Eye.app/Contents/Helpers/llama-server" && servers.count == 3,
                      "A server inside the app comes before Homebrew's")

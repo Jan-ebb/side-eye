@@ -37,7 +37,7 @@ Side Eye has no Dock icon. It lives in the menu bar and as a small pill on the r
 - Hover the pill, or press ⌃⌥Space from any app, to open the sidebar.
 - Side Eye opens at login from its first launch, so it is back after a restart. Untick **Open Side Eye at login** in the welcome window, or turn off **Open at login** in Settings, to stop that.
 - Side Eye needs no permissions to start. Opening a Claude Code chat that runs in a terminal asks for Automation access once, so Side Eye can switch to the right tab.
-- [Summaries](#summaries) are optional. The welcome window and **Settings → General** offer to download the model for them, 1.1 GB, once.
+- [Summaries](#summaries) are optional. The welcome window and **Settings → General** offer to download the model for them, Qwen3.5-2B, 1.1 GB, once.
 - If the Inbox is empty, it says why: no supported app was found, or none has a chat yet.
 - **Settings → Apps** shows how many chats the last scan found for each app.
 
@@ -140,8 +140,8 @@ To give a chat Side Eye does not find a row of its own, choose **Add chat link�
 
 With summaries on, Side Eye writes one sentence per chat about the latest request, the result and any next action. It shows in previews, on hover and in nudges. Summaries are optional and off until you ask for them.
 
-- **Getting them.** Press **Install** under **Settings → General**, or in the welcome window. Side Eye fetches the model, 1.1 GB from Hugging Face, checks it against a published SHA-256 and keeps it in `~/Library/Application Support/Side Eye/Models`. A file that fails the check is deleted. Settings can remove the model again.
-- **Without the model.** Settings marks it **Not installed**. With previews on, the sidebar says so too, in a note at the top with an **Install…** button that opens Settings. Close the note and it stays away.
+- **Getting them.** Press **Install** under **Settings → General**, or in the welcome window. Side Eye fetches Qwen3.5-2B, a 1.1 GB model, from Hugging Face, checks it against a published SHA-256 and keeps it in `~/Library/Application Support/Side Eye/Models`. A file that fails the check is deleted. Settings can remove the model again.
+- **Without the model.** Settings marks it **Not installed**. With previews on, the sidebar says so too, by the model’s name, in a note at the top with an **Install…** button that opens Settings. Close the note and it stays away.
 - **Where they run.** On your Mac, on [llama.cpp](https://github.com/ggml-org/llama.cpp), which the release download carries inside the app. Side Eye starts it only when needed, talks to it over a private Unix socket and shuts it down when idle.
 - **What they read.** Bounded excerpts from the apps’ local caches. Summaries are kept in memory only. Where a recent transcript is absent, a row relies on what its app reports.
 - **The first one is slow.** The very first summary on a Mac takes about 15 seconds longer on Apple silicon, while macOS prepares the model’s GPU code. After that it is cached.

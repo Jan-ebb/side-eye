@@ -13,6 +13,10 @@ struct SummaryModel: Sendable {
     /// A copy built into this copy of Side Eye, which the packaging script can do.
     var bundled: URL?
 
+    /// What the model is called wherever Side Eye offers, fetches or misses it, so nobody is asked to
+    /// download "a model" without learning which.
+    static let name = "Qwen3.5-2B"
+
     /// The pinned weights named in ModelLicenses/SideEyeSummary.md. The link names one revision, so the
     /// file behind it cannot change.
     static let pinned = SummaryModel(
@@ -91,7 +95,7 @@ final class SummaryModelDownload: NSObject, URLSessionDownloadDelegate, @uncheck
         let free = (try? folder.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]))?
             .volumeAvailableCapacityForImportantUsage
         if let free, free < model.byteCount + 200_000_000 {
-            report(.failed("Not enough free space. The model needs \(model.sizeText)."))
+            report(.failed("Not enough free space. \(SummaryModel.name) needs \(model.sizeText)."))
             return
         }
         // Nothing is kept between launches: no cookies, no cache, no credentials.

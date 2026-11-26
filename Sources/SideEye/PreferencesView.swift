@@ -556,7 +556,7 @@ struct SettingsLabel: View {
 }
 
 /// The rows that offer, fetch and switch summaries. Settings and the welcome window show the same ones.
-/// Nothing is downloaded until someone presses Download, which names the size next to it.
+/// Nothing is downloaded until someone presses Install, which names the size beside the model's name.
 struct SummaryRows: View {
     @ObservedObject var model: PreferencesModel
     /// Settings also offers to delete a downloaded model again.
@@ -596,7 +596,7 @@ struct SummaryRows: View {
                 if offersRemoval && model.canRemoveSummaryModel {
                     SettingsDivider()
                     SettingsRow(compact: true) {
-                        SettingsLabel(title: "Model on this Mac")
+                        SettingsLabel(title: "\(SummaryModel.name) on this Mac")
                     } control: {
                         HStack(spacing: 10) {
                             Text(size)
@@ -608,8 +608,10 @@ struct SummaryRows: View {
                     }
                 }
             case .missing:
-                // The button names the size. Two lines at most, so the welcome window needs no scrolling.
-                row(notInstalled: true, detail: "\(Self.benefit) Downloads a model once. Chat text stays on this Mac.") {
+                // The text names the model and the button its size. Two lines at most, so the welcome
+                // window needs no scrolling.
+                row(notInstalled: true, detail: "\(Self.benefit) Downloads the \(SummaryModel.name) model. "
+                    + "Chat text stays on this Mac.") {
                     Button("Install \(size)", action: model.downloadSummaryModel)
                         .buttonStyle(.borderedProminent)
                         .controlSize(.regular)
@@ -621,8 +623,9 @@ struct SummaryRows: View {
                         ProgressView(value: Double(min(received, total)), total: Double(max(total, 1)))
                             .progressViewStyle(.linear)
                             .controlSize(.small)
-                            .accessibilityLabel("Model download")
-                        Text("Downloading the model: \(SummaryModel.sizeText(received)) of \(SummaryModel.sizeText(total)).")
+                            .accessibilityLabel("\(SummaryModel.name) download")
+                        Text("Downloading \(SummaryModel.name): \(SummaryModel.sizeText(received)) of "
+                            + "\(SummaryModel.sizeText(total)).")
                             .font(.system(size: 11).monospacedDigit())
                             .foregroundStyle(.secondary)
                     }

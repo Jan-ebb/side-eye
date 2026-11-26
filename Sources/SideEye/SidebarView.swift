@@ -629,13 +629,13 @@ struct SidebarView: View {
     }
 
     /// With previews on and no summary model on this Mac, the line under a chat can only say where it
-    /// runs. This says why and leads to the place where the model is installed.
+    /// runs. This says why, names the model and leads to the place where it is installed.
     private var summaryNote: some View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Local model not installed")
+                Text("\(SummaryModel.name) is not installed")
                     .font(.system(size: 13, weight: .semibold))
-                Text("Install it to see what each agent is doing.")
+                Text("The local model that summarizes each chat.")
                     .font(.system(size: 12))
                     .foregroundStyle(colors.secondary)
                     .lineLimit(1)
@@ -653,8 +653,8 @@ struct SidebarView: View {
                     .contentShape(Capsule())
             }
             .buttonStyle(.plain)
-            .help("Open Settings, where the model is installed")
-            .accessibilityLabel("Install the local model in Settings")
+            .help("Open Settings, where \(SummaryModel.name) is installed")
+            .accessibilityLabel("Install \(SummaryModel.name) in Settings")
             Button(action: store.hideSummaryNote) {
                 Image(systemName: "xmark")
                     .font(.system(size: 10, weight: .bold))
